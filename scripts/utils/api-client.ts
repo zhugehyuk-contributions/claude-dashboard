@@ -21,6 +21,11 @@ const usageCacheMap: Map<string, CacheEntry<UsageLimits>> = new Map();
 const pendingRequests: Map<string, Promise<UsageLimits | null>> = new Map();
 
 /**
+ * Last used token hash for fallback when credentials are unavailable
+ */
+let lastTokenHash: string | null = null;
+
+/**
  * Ensure cache directory exists with secure permissions
  */
 function ensureCacheDir(): void {
@@ -55,11 +60,21 @@ function isCacheValid(tokenHash: string, ttlSeconds: number): boolean {
 export async function fetchUsageLimits(ttlSeconds: number = 60): Promise<UsageLimits | null> {
   // Get token first to determine cache key
   const token = await getCredentials();
+
+  // Credential lookup failed - try to return cached data with last known token
   if (!token) {
+    if (lastTokenHash) {
+      const cached = usageCacheMap.get(lastTokenHash);
+      if (cached) return cached.data;
+
+      const fileCache = await loadFileCache(lastTokenHash, ttlSeconds * 10); // Extended TTL for fallback
+      if (fileCache) return fileCache;
+    }
     return null;
   }
 
   const tokenHash = hashToken(token);
+  lastTokenHash = tokenHash;
 
   // Check memory cache first
   if (isCacheValid(tokenHash, ttlSeconds)) {

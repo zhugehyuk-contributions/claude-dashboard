@@ -1,6 +1,6 @@
 /**
  * Plugin version - injected at build time via esbuild define
- * Falls back to 'dev' if not defined (during development)
+ * __VERSION__ is always defined by build.js
  */
 declare const __VERSION__: string;
-export const VERSION: string = typeof __VERSION__ !== 'undefined' ? __VERSION__ : 'dev';
+export const VERSION: string = __VERSION__;

@@ -167,13 +167,14 @@ function hashToken(token) {
 }
 
 // scripts/version.ts
-var VERSION = true ? "1.1.0" : "dev";
+var VERSION = "1.1.0";
 
 // scripts/utils/api-client.ts
 var API_TIMEOUT_MS = 5e3;
 var CACHE_DIR = path.join(os.homedir(), ".cache", "claude-dashboard");
 var usageCacheMap = /* @__PURE__ */ new Map();
 var pendingRequests = /* @__PURE__ */ new Map();
+var lastTokenHash = null;
 function ensureCacheDir() {
   if (!fs.existsSync(CACHE_DIR)) {
     fs.mkdirSync(CACHE_DIR, { recursive: true, mode: 448 });
@@ -192,9 +193,18 @@ function isCacheValid(tokenHash, ttlSeconds) {
 async function fetchUsageLimits(ttlSeconds = 60) {
   const token = await getCredentials();
   if (!token) {
+    if (lastTokenHash) {
+      const cached = usageCacheMap.get(lastTokenHash);
+      if (cached)
+        return cached.data;
+      const fileCache2 = await loadFileCache(lastTokenHash, ttlSeconds * 10);
+      if (fileCache2)
+        return fileCache2;
+    }
     return null;
   }
   const tokenHash = hashToken(token);
+  lastTokenHash = tokenHash;
   if (isCacheValid(tokenHash, ttlSeconds)) {
     const cached = usageCacheMap.get(tokenHash);
     if (cached)
