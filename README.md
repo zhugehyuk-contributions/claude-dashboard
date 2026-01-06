@@ -123,6 +123,16 @@ Run setup with explicit language:
 /claude-dashboard:setup en  # English
 ```
 
+### Cache Issues
+
+API response cache is stored in `~/.cache/claude-dashboard/`. To clear:
+
+```bash
+rm -rf ~/.cache/claude-dashboard/
+```
+
+Cache files are automatically cleaned up after 1 hour.
+
 ## Development
 
 ```bash

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // scripts/statusline.ts
-import { readFile as readFile2 } from "fs/promises";
+import { readFile as readFile3 } from "fs/promises";
 import { join as join2 } from "path";
 import { homedir as homedir2 } from "os";
 
@@ -38,8 +38,10 @@ var COLORS = {
 };
 var RESET = COLORS.reset;
 function getColorForPercent(percent) {
-  if (percent <= 50) return COLORS.green;
-  if (percent <= 80) return COLORS.yellow;
+  if (percent <= 50)
+    return COLORS.green;
+  if (percent <= 80)
+    return COLORS.yellow;
   return COLORS.red;
 }
 function colorize(text, color) {
@@ -65,7 +67,8 @@ function formatTimeRemaining(resetAt, t) {
   const reset = typeof resetAt === "string" ? new Date(resetAt) : resetAt;
   const now = /* @__PURE__ */ new Date();
   const diffMs = reset.getTime() - now.getTime();
-  if (diffMs <= 0) return `0${t.time.minutes}`;
+  if (diffMs <= 0)
+    return `0${t.time.minutes}`;
   const totalMinutes = Math.floor(diffMs / (1e3 * 60));
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
@@ -76,9 +79,12 @@ function formatTimeRemaining(resetAt, t) {
 }
 function shortenModelName(displayName) {
   const lower = displayName.toLowerCase();
-  if (lower.includes("opus")) return "Opus";
-  if (lower.includes("sonnet")) return "Sonnet";
-  if (lower.includes("haiku")) return "Haiku";
+  if (lower.includes("opus"))
+    return "Opus";
+  if (lower.includes("sonnet"))
+    return "Sonnet";
+  if (lower.includes("haiku"))
+    return "Haiku";
   const parts = displayName.split(/\s+/);
   if (parts.length > 1 && parts[0].toLowerCase() === "claude") {
     return parts[1];
@@ -86,7 +92,8 @@ function shortenModelName(displayName) {
   return displayName;
 }
 function calculatePercent(current, total) {
-  if (total <= 0) return 0;
+  if (total <= 0)
+    return 0;
   return Math.min(100, Math.round(current / total * 100));
 }
 
@@ -109,7 +116,9 @@ function renderProgressBar(percent, config = DEFAULT_PROGRESS_BAR_CONFIG) {
 }
 
 // scripts/utils/api-client.ts
-import fs from "fs";
+import { readFile as readFile2, writeFile, mkdir, readdir, stat, unlink } from "fs/promises";
+import os from "os";
+import path from "path";
 
 // scripts/utils/credentials.ts
 import { execFileSync } from "child_process";
@@ -150,28 +159,79 @@ async function getCredentialsFromFile() {
   }
 }
 
+// scripts/utils/hash.ts
+import { createHash } from "crypto";
+var HASH_LENGTH = 16;
+function hashToken(token) {
+  return createHash("sha256").update(token).digest("hex").substring(0, HASH_LENGTH);
+}
+
+// scripts/version.ts
+var VERSION = "1.1.0";
+
 // scripts/utils/api-client.ts
 var API_TIMEOUT_MS = 5e3;
-var CACHE_FILE = "/tmp/claude-dashboard-cache.json";
-var usageCache = null;
-function isCacheValid(ttlSeconds) {
-  if (!usageCache) return false;
-  const ageSeconds = (Date.now() - usageCache.timestamp) / 1e3;
+var CACHE_DIR = path.join(os.homedir(), ".cache", "claude-dashboard");
+var CACHE_MAX_AGE_SECONDS = 3600;
+var CLEANUP_INTERVAL_MS = 36e5;
+var usageCacheMap = /* @__PURE__ */ new Map();
+var pendingRequests = /* @__PURE__ */ new Map();
+var lastTokenHash = null;
+var lastCleanupTime = 0;
+async function ensureCacheDir() {
+  try {
+    await mkdir(CACHE_DIR, { recursive: true, mode: 448 });
+  } catch {
+  }
+}
+function getCacheFilePath(tokenHash) {
+  return path.join(CACHE_DIR, `cache-${tokenHash}.json`);
+}
+function isCacheValid(tokenHash, ttlSeconds) {
+  const cache = usageCacheMap.get(tokenHash);
+  if (!cache)
+    return false;
+  const ageSeconds = (Date.now() - cache.timestamp) / 1e3;
   return ageSeconds < ttlSeconds;
 }
 async function fetchUsageLimits(ttlSeconds = 60) {
-  if (isCacheValid(ttlSeconds) && usageCache) {
-    return usageCache.data;
-  }
-  const fileCache = await loadFileCache(ttlSeconds);
-  if (fileCache) {
-    usageCache = { data: fileCache, timestamp: Date.now() };
-    return fileCache;
-  }
   const token = await getCredentials();
   if (!token) {
+    if (lastTokenHash) {
+      const cached = usageCacheMap.get(lastTokenHash);
+      if (cached)
+        return cached.data;
+      const fileCache2 = await loadFileCache(lastTokenHash, ttlSeconds * 10);
+      if (fileCache2)
+        return fileCache2;
+    }
     return null;
   }
+  const tokenHash = hashToken(token);
+  lastTokenHash = tokenHash;
+  if (isCacheValid(tokenHash, ttlSeconds)) {
+    const cached = usageCacheMap.get(tokenHash);
+    if (cached)
+      return cached.data;
+  }
+  const fileCache = await loadFileCache(tokenHash, ttlSeconds);
+  if (fileCache) {
+    usageCacheMap.set(tokenHash, { data: fileCache, timestamp: Date.now() });
+    return fileCache;
+  }
+  const pending = pendingRequests.get(tokenHash);
+  if (pending) {
+    return pending;
+  }
+  const requestPromise = fetchFromApi(token, tokenHash);
+  pendingRequests.set(tokenHash, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    pendingRequests.delete(tokenHash);
+  }
+}
+async function fetchFromApi(token, tokenHash) {
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
@@ -180,7 +240,7 @@ async function fetchUsageLimits(ttlSeconds = 60) {
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        "User-Agent": "claude-dashboard/1.0.0",
+        "User-Agent": `claude-dashboard/${VERSION}`,
         Authorization: `Bearer ${token}`,
         "anthropic-beta": "oauth-2025-04-20"
       },
@@ -196,17 +256,18 @@ async function fetchUsageLimits(ttlSeconds = 60) {
       seven_day: data.seven_day ?? null,
       seven_day_sonnet: data.seven_day_sonnet ?? null
     };
-    usageCache = { data: limits, timestamp: Date.now() };
-    await saveFileCache(limits);
+    usageCacheMap.set(tokenHash, { data: limits, timestamp: Date.now() });
+    await saveFileCache(tokenHash, limits);
     return limits;
   } catch {
     return null;
   }
 }
-async function loadFileCache(ttlSeconds) {
+async function loadFileCache(tokenHash, ttlSeconds) {
   try {
-    if (!fs.existsSync(CACHE_FILE)) return null;
-    const content = JSON.parse(fs.readFileSync(CACHE_FILE, "utf-8"));
+    const cacheFile = getCacheFilePath(tokenHash);
+    const raw = await readFile2(cacheFile, "utf-8");
+    const content = JSON.parse(raw);
     const ageSeconds = (Date.now() - content.timestamp) / 1e3;
     if (ageSeconds < ttlSeconds) {
       return content.data;
@@ -216,15 +277,44 @@ async function loadFileCache(ttlSeconds) {
     return null;
   }
 }
-async function saveFileCache(data) {
+async function saveFileCache(tokenHash, data) {
   try {
-    fs.writeFileSync(
-      CACHE_FILE,
+    await ensureCacheDir();
+    const cacheFile = getCacheFilePath(tokenHash);
+    await writeFile(
+      cacheFile,
       JSON.stringify({
         data,
         timestamp: Date.now()
       })
     );
+    cleanupExpiredCache().catch(() => {
+    });
+  } catch {
+  }
+}
+async function cleanupExpiredCache() {
+  const now = Date.now();
+  if (now - lastCleanupTime < CLEANUP_INTERVAL_MS) {
+    return;
+  }
+  lastCleanupTime = now;
+  try {
+    const files = await readdir(CACHE_DIR);
+    for (const file of files) {
+      if (!file.startsWith("cache-") || !file.endsWith(".json")) {
+        continue;
+      }
+      const filePath = path.join(CACHE_DIR, file);
+      try {
+        const fileStat = await stat(filePath);
+        const ageSeconds = (now - fileStat.mtimeMs) / 1e3;
+        if (ageSeconds > CACHE_MAX_AGE_SECONDS) {
+          await unlink(filePath);
+        }
+      } catch {
+      }
+    }
   } catch {
   }
 }
@@ -312,7 +402,7 @@ async function readStdin() {
 }
 async function loadConfig() {
   try {
-    const content = await readFile2(CONFIG_PATH, "utf-8");
+    const content = await readFile3(CONFIG_PATH, "utf-8");
     const userConfig = JSON.parse(content);
     return { ...DEFAULT_CONFIG, ...userConfig };
   } catch {
