@@ -1,4 +1,4 @@
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { readFile, writeFile, mkdir, readdir, stat, unlink } from 'fs/promises';
 import os from 'os';
 import path from 'path';
 import type { UsageLimits, CacheEntry } from '../types.js';
@@ -8,6 +8,8 @@ import { VERSION } from '../version.js';
 
 const API_TIMEOUT_MS = 5000;
 const CACHE_DIR = path.join(os.homedir(), '.cache', 'claude-dashboard');
+const CACHE_MAX_AGE_SECONDS = 3600; // 1 hour - cleanup files older than this
+const CLEANUP_PROBABILITY = 0.1; // 10% chance to run cleanup on each save
 
 /**
  * In-memory cache Map: tokenHash -> CacheEntry
@@ -186,14 +188,54 @@ async function saveFileCache(tokenHash: string, data: UsageLimits): Promise<void
         timestamp: Date.now(),
       })
     );
+
+    // Probabilistically clean up old cache files
+    cleanupExpiredCache();
   } catch {
     // Ignore cache write errors
   }
 }
 
 /**
- * Clear cache (useful for testing)
+ * Clear in-memory cache (useful for testing)
  */
 export function clearCache(): void {
   usageCacheMap.clear();
+}
+
+/**
+ * Clean up expired cache files from disk
+ * Runs probabilistically to avoid frequent disk operations
+ */
+async function cleanupExpiredCache(): Promise<void> {
+  // Only run cleanup 10% of the time
+  if (Math.random() > CLEANUP_PROBABILITY) {
+    return;
+  }
+
+  try {
+    const files = await readdir(CACHE_DIR);
+    const now = Date.now();
+
+    for (const file of files) {
+      if (!file.startsWith('cache-') || !file.endsWith('.json')) {
+        continue;
+      }
+
+      const filePath = path.join(CACHE_DIR, file);
+
+      try {
+        const fileStat = await stat(filePath);
+        const ageSeconds = (now - fileStat.mtimeMs) / 1000;
+
+        if (ageSeconds > CACHE_MAX_AGE_SECONDS) {
+          await unlink(filePath);
+        }
+      } catch {
+        // Ignore individual file errors
+      }
+    }
+  } catch {
+    // Ignore cleanup errors (directory might not exist yet)
+  }
 }

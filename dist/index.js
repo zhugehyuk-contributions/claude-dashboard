@@ -116,7 +116,7 @@ function renderProgressBar(percent, config = DEFAULT_PROGRESS_BAR_CONFIG) {
 }
 
 // scripts/utils/api-client.ts
-import { readFile as readFile2, writeFile, mkdir } from "fs/promises";
+import { readFile as readFile2, writeFile, mkdir, readdir, stat, unlink } from "fs/promises";
 import os from "os";
 import path from "path";
 
@@ -172,6 +172,8 @@ var VERSION = "1.1.0";
 // scripts/utils/api-client.ts
 var API_TIMEOUT_MS = 5e3;
 var CACHE_DIR = path.join(os.homedir(), ".cache", "claude-dashboard");
+var CACHE_MAX_AGE_SECONDS = 3600;
+var CLEANUP_PROBABILITY = 0.1;
 var usageCacheMap = /* @__PURE__ */ new Map();
 var pendingRequests = /* @__PURE__ */ new Map();
 var lastTokenHash = null;
@@ -285,6 +287,31 @@ async function saveFileCache(tokenHash, data) {
         timestamp: Date.now()
       })
     );
+    cleanupExpiredCache();
+  } catch {
+  }
+}
+async function cleanupExpiredCache() {
+  if (Math.random() > CLEANUP_PROBABILITY) {
+    return;
+  }
+  try {
+    const files = await readdir(CACHE_DIR);
+    const now = Date.now();
+    for (const file of files) {
+      if (!file.startsWith("cache-") || !file.endsWith(".json")) {
+        continue;
+      }
+      const filePath = path.join(CACHE_DIR, file);
+      try {
+        const fileStat = await stat(filePath);
+        const ageSeconds = (now - fileStat.mtimeMs) / 1e3;
+        if (ageSeconds > CACHE_MAX_AGE_SECONDS) {
+          await unlink(filePath);
+        }
+      } catch {
+      }
+    }
   } catch {
   }
 }
