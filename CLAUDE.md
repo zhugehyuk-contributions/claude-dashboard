@@ -93,4 +93,29 @@ Before committing:
 
 1. Edit `scripts/utils/api-client.ts`
 2. Check cache invalidation logic
-3. Test with expired cache (`rm /tmp/claude-dashboard-cache.json`)
+3. Test with expired cache (`rm -rf ~/.cache/claude-dashboard/`)
+
+## Cache Architecture
+
+### Multi-Account Support
+
+- Each OAuth token is hashed (SHA-256, 16 chars) for cache key separation
+- Cache files: `~/.cache/claude-dashboard/cache-{hash}.json`
+- Supports concurrent account switching without cache conflicts
+
+### Three-Tier Caching
+
+1. **Memory cache** - In-process Map, fastest
+2. **File cache** - Persists across process restarts
+3. **API fetch** - Falls back when cache misses
+
+### Cleanup Behavior
+
+- **Trigger**: Time-based (once per hour maximum)
+- **Target**: Files older than `CACHE_MAX_AGE_SECONDS` (1 hour)
+- **Pattern**: Only `cache-*.json` files in cache directory
+
+### Request Deduplication
+
+- `pendingRequests` Map prevents concurrent duplicate API calls
+- Same token hash → shares single in-flight request

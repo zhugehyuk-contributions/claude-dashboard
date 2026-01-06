@@ -173,10 +173,11 @@ var VERSION = "1.1.0";
 var API_TIMEOUT_MS = 5e3;
 var CACHE_DIR = path.join(os.homedir(), ".cache", "claude-dashboard");
 var CACHE_MAX_AGE_SECONDS = 3600;
-var CLEANUP_PROBABILITY = 0.1;
+var CLEANUP_INTERVAL_MS = 36e5;
 var usageCacheMap = /* @__PURE__ */ new Map();
 var pendingRequests = /* @__PURE__ */ new Map();
 var lastTokenHash = null;
+var lastCleanupTime = 0;
 async function ensureCacheDir() {
   try {
     await mkdir(CACHE_DIR, { recursive: true, mode: 448 });
@@ -293,12 +294,13 @@ async function saveFileCache(tokenHash, data) {
   }
 }
 async function cleanupExpiredCache() {
-  if (Math.random() > CLEANUP_PROBABILITY) {
+  const now = Date.now();
+  if (now - lastCleanupTime < CLEANUP_INTERVAL_MS) {
     return;
   }
+  lastCleanupTime = now;
   try {
     const files = await readdir(CACHE_DIR);
-    const now = Date.now();
     for (const file of files) {
       if (!file.startsWith("cache-") || !file.endsWith(".json")) {
         continue;

@@ -184,7 +184,7 @@ describe('api-client', () => {
       const filesBefore = await readdir(ACTUAL_CACHE_DIR);
       expect(filesBefore).toContain('cache-cleanup-test-old.json');
 
-      // Trigger cleanup by making multiple API calls (10% probability)
+      // Trigger cleanup (time-based: first call always runs cleanup)
       const { getCredentials } = await import('../utils/credentials.js');
       vi.mocked(getCredentials).mockResolvedValue('cleanup-trigger-token-' + Date.now());
 
@@ -195,13 +195,10 @@ describe('api-client', () => {
       });
 
       const { fetchUsageLimits, clearCache } = await import('../utils/api-client.js');
+      clearCache();
 
-      // Run multiple times to increase chance of cleanup running (10% probability)
-      for (let i = 0; i < 30; i++) {
-        clearCache();
-        vi.mocked(getCredentials).mockResolvedValue(`cleanup-trigger-token-${Date.now()}-${i}`);
-        await fetchUsageLimits();
-      }
+      // Single call triggers cleanup (first call after module load)
+      await fetchUsageLimits();
 
       // Give async cleanup time to complete
       await new Promise((resolve) => setTimeout(resolve, 100));

@@ -9,7 +9,7 @@ import { VERSION } from '../version.js';
 const API_TIMEOUT_MS = 5000;
 const CACHE_DIR = path.join(os.homedir(), '.cache', 'claude-dashboard');
 const CACHE_MAX_AGE_SECONDS = 3600; // 1 hour - cleanup files older than this
-const CLEANUP_PROBABILITY = 0.1; // 10% chance to run cleanup on each save
+const CLEANUP_INTERVAL_MS = 3600000; // 1 hour - minimum interval between cleanups
 
 /**
  * In-memory cache Map: tokenHash -> CacheEntry
@@ -26,6 +26,11 @@ const pendingRequests: Map<string, Promise<UsageLimits | null>> = new Map();
  * Last used token hash for fallback when credentials are unavailable
  */
 let lastTokenHash: string | null = null;
+
+/**
+ * Last cleanup timestamp for time-based throttling
+ */
+let lastCleanupTime = 0;
 
 /**
  * Ensure cache directory exists with secure permissions
@@ -205,17 +210,19 @@ export function clearCache(): void {
 
 /**
  * Clean up expired cache files from disk
- * Runs probabilistically to avoid frequent disk operations
+ * Runs at most once per hour (time-based throttling)
  */
 async function cleanupExpiredCache(): Promise<void> {
-  // Only run cleanup 10% of the time
-  if (Math.random() > CLEANUP_PROBABILITY) {
+  const now = Date.now();
+
+  // Skip if last cleanup was less than 1 hour ago
+  if (now - lastCleanupTime < CLEANUP_INTERVAL_MS) {
     return;
   }
+  lastCleanupTime = now;
 
   try {
     const files = await readdir(CACHE_DIR);
-    const now = Date.now();
 
     for (const file of files) {
       if (!file.startsWith('cache-') || !file.endsWith('.json')) {
