@@ -1,21 +1,31 @@
 import fs from 'fs';
 import type { UsageLimits, CacheEntry } from '../types.js';
 import { getCredentials } from './credentials.js';
+import { hashToken } from './hash.js';
+import { VERSION } from '../version.js';
 
 const API_TIMEOUT_MS = 5000;
-const CACHE_FILE = '/tmp/claude-dashboard-cache.json';
+const CACHE_FILE_PREFIX = '/tmp/claude-dashboard-cache-';
 
 /**
- * In-memory cache for API responses
+ * In-memory cache Map: tokenHash -> CacheEntry
  */
-let usageCache: CacheEntry<UsageLimits> | null = null;
+const usageCacheMap: Map<string, CacheEntry<UsageLimits>> = new Map();
 
 /**
- * Check if cache is still valid
+ * Get cache file path for a specific token hash
  */
-function isCacheValid(ttlSeconds: number): boolean {
-  if (!usageCache) return false;
-  const ageSeconds = (Date.now() - usageCache.timestamp) / 1000;
+function getCacheFilePath(tokenHash: string): string {
+  return `${CACHE_FILE_PREFIX}${tokenHash}.json`;
+}
+
+/**
+ * Check if cache is still valid for given token
+ */
+function isCacheValid(tokenHash: string, ttlSeconds: number): boolean {
+  const cache = usageCacheMap.get(tokenHash);
+  if (!cache) return false;
+  const ageSeconds = (Date.now() - cache.timestamp) / 1000;
   return ageSeconds < ttlSeconds;
 }
 
@@ -26,24 +36,27 @@ function isCacheValid(ttlSeconds: number): boolean {
  * @returns Usage limits or null if failed
  */
 export async function fetchUsageLimits(ttlSeconds: number = 60): Promise<UsageLimits | null> {
-  // Check cache first
-  if (isCacheValid(ttlSeconds) && usageCache) {
-    return usageCache.data;
-  }
-
-  // Try to load from file cache (for persistence across calls)
-  const fileCache = await loadFileCache(ttlSeconds);
-  if (fileCache) {
-    usageCache = { data: fileCache, timestamp: Date.now() };
-    return fileCache;
-  }
-
-  // Fetch from API
+  // Get token first to determine cache key
   const token = await getCredentials();
   if (!token) {
     return null;
   }
 
+  const tokenHash = hashToken(token);
+
+  // Check memory cache first
+  if (isCacheValid(tokenHash, ttlSeconds)) {
+    return usageCacheMap.get(tokenHash)!.data;
+  }
+
+  // Try to load from file cache (for persistence across calls)
+  const fileCache = await loadFileCache(tokenHash, ttlSeconds);
+  if (fileCache) {
+    usageCacheMap.set(tokenHash, { data: fileCache, timestamp: Date.now() });
+    return fileCache;
+  }
+
+  // Fetch from API
   try {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
@@ -53,7 +66,7 @@ export async function fetchUsageLimits(ttlSeconds: number = 60): Promise<UsageLi
       headers: {
         Accept: 'application/json',
         'Content-Type': 'application/json',
-        'User-Agent': 'claude-dashboard/1.0.0',
+        'User-Agent': `claude-dashboard/${VERSION}`,
         Authorization: `Bearer ${token}`,
         'anthropic-beta': 'oauth-2025-04-20',
       },
@@ -75,8 +88,8 @@ export async function fetchUsageLimits(ttlSeconds: number = 60): Promise<UsageLi
     };
 
     // Update caches
-    usageCache = { data: limits, timestamp: Date.now() };
-    await saveFileCache(limits);
+    usageCacheMap.set(tokenHash, { data: limits, timestamp: Date.now() });
+    await saveFileCache(tokenHash, limits);
 
     return limits;
   } catch {
@@ -85,13 +98,14 @@ export async function fetchUsageLimits(ttlSeconds: number = 60): Promise<UsageLi
 }
 
 /**
- * Load cache from file
+ * Load cache from file for specific token
  */
-async function loadFileCache(ttlSeconds: number): Promise<UsageLimits | null> {
+async function loadFileCache(tokenHash: string, ttlSeconds: number): Promise<UsageLimits | null> {
   try {
-    if (!fs.existsSync(CACHE_FILE)) return null;
+    const cacheFile = getCacheFilePath(tokenHash);
+    if (!fs.existsSync(cacheFile)) return null;
 
-    const content = JSON.parse(fs.readFileSync(CACHE_FILE, 'utf-8'));
+    const content = JSON.parse(fs.readFileSync(cacheFile, 'utf-8'));
     const ageSeconds = (Date.now() - content.timestamp) / 1000;
 
     if (ageSeconds < ttlSeconds) {
@@ -104,12 +118,13 @@ async function loadFileCache(ttlSeconds: number): Promise<UsageLimits | null> {
 }
 
 /**
- * Save cache to file
+ * Save cache to file for specific token
  */
-async function saveFileCache(data: UsageLimits): Promise<void> {
+async function saveFileCache(tokenHash: string, data: UsageLimits): Promise<void> {
   try {
+    const cacheFile = getCacheFilePath(tokenHash);
     fs.writeFileSync(
-      CACHE_FILE,
+      cacheFile,
       JSON.stringify({
         data,
         timestamp: Date.now(),
@@ -124,5 +139,5 @@ async function saveFileCache(data: UsageLimits): Promise<void> {
  * Clear cache (useful for testing)
  */
 export function clearCache(): void {
-  usageCache = null;
+  usageCacheMap.clear();
 }

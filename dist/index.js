@@ -38,8 +38,10 @@ var COLORS = {
 };
 var RESET = COLORS.reset;
 function getColorForPercent(percent) {
-  if (percent <= 50) return COLORS.green;
-  if (percent <= 80) return COLORS.yellow;
+  if (percent <= 50)
+    return COLORS.green;
+  if (percent <= 80)
+    return COLORS.yellow;
   return COLORS.red;
 }
 function colorize(text, color) {
@@ -65,7 +67,8 @@ function formatTimeRemaining(resetAt, t) {
   const reset = typeof resetAt === "string" ? new Date(resetAt) : resetAt;
   const now = /* @__PURE__ */ new Date();
   const diffMs = reset.getTime() - now.getTime();
-  if (diffMs <= 0) return `0${t.time.minutes}`;
+  if (diffMs <= 0)
+    return `0${t.time.minutes}`;
   const totalMinutes = Math.floor(diffMs / (1e3 * 60));
   const hours = Math.floor(totalMinutes / 60);
   const minutes = totalMinutes % 60;
@@ -76,9 +79,12 @@ function formatTimeRemaining(resetAt, t) {
 }
 function shortenModelName(displayName) {
   const lower = displayName.toLowerCase();
-  if (lower.includes("opus")) return "Opus";
-  if (lower.includes("sonnet")) return "Sonnet";
-  if (lower.includes("haiku")) return "Haiku";
+  if (lower.includes("opus"))
+    return "Opus";
+  if (lower.includes("sonnet"))
+    return "Sonnet";
+  if (lower.includes("haiku"))
+    return "Haiku";
   const parts = displayName.split(/\s+/);
   if (parts.length > 1 && parts[0].toLowerCase() === "claude") {
     return parts[1];
@@ -86,7 +92,8 @@ function shortenModelName(displayName) {
   return displayName;
 }
 function calculatePercent(current, total) {
-  if (total <= 0) return 0;
+  if (total <= 0)
+    return 0;
   return Math.min(100, Math.round(current / total * 100));
 }
 
@@ -150,27 +157,42 @@ async function getCredentialsFromFile() {
   }
 }
 
+// scripts/utils/hash.ts
+import { createHash } from "crypto";
+function hashToken(token) {
+  return createHash("sha256").update(token).digest("hex").substring(0, 12);
+}
+
+// scripts/version.ts
+var VERSION = true ? "1.1.0" : "dev";
+
 // scripts/utils/api-client.ts
 var API_TIMEOUT_MS = 5e3;
-var CACHE_FILE = "/tmp/claude-dashboard-cache.json";
-var usageCache = null;
-function isCacheValid(ttlSeconds) {
-  if (!usageCache) return false;
-  const ageSeconds = (Date.now() - usageCache.timestamp) / 1e3;
+var CACHE_FILE_PREFIX = "/tmp/claude-dashboard-cache-";
+var usageCacheMap = /* @__PURE__ */ new Map();
+function getCacheFilePath(tokenHash) {
+  return `${CACHE_FILE_PREFIX}${tokenHash}.json`;
+}
+function isCacheValid(tokenHash, ttlSeconds) {
+  const cache = usageCacheMap.get(tokenHash);
+  if (!cache)
+    return false;
+  const ageSeconds = (Date.now() - cache.timestamp) / 1e3;
   return ageSeconds < ttlSeconds;
 }
 async function fetchUsageLimits(ttlSeconds = 60) {
-  if (isCacheValid(ttlSeconds) && usageCache) {
-    return usageCache.data;
-  }
-  const fileCache = await loadFileCache(ttlSeconds);
-  if (fileCache) {
-    usageCache = { data: fileCache, timestamp: Date.now() };
-    return fileCache;
-  }
   const token = await getCredentials();
   if (!token) {
     return null;
+  }
+  const tokenHash = hashToken(token);
+  if (isCacheValid(tokenHash, ttlSeconds)) {
+    return usageCacheMap.get(tokenHash).data;
+  }
+  const fileCache = await loadFileCache(tokenHash, ttlSeconds);
+  if (fileCache) {
+    usageCacheMap.set(tokenHash, { data: fileCache, timestamp: Date.now() });
+    return fileCache;
   }
   try {
     const controller = new AbortController();
@@ -180,7 +202,7 @@ async function fetchUsageLimits(ttlSeconds = 60) {
       headers: {
         Accept: "application/json",
         "Content-Type": "application/json",
-        "User-Agent": "claude-dashboard/1.0.0",
+        "User-Agent": `claude-dashboard/${VERSION}`,
         Authorization: `Bearer ${token}`,
         "anthropic-beta": "oauth-2025-04-20"
       },
@@ -196,17 +218,19 @@ async function fetchUsageLimits(ttlSeconds = 60) {
       seven_day: data.seven_day ?? null,
       seven_day_sonnet: data.seven_day_sonnet ?? null
     };
-    usageCache = { data: limits, timestamp: Date.now() };
-    await saveFileCache(limits);
+    usageCacheMap.set(tokenHash, { data: limits, timestamp: Date.now() });
+    await saveFileCache(tokenHash, limits);
     return limits;
   } catch {
     return null;
   }
 }
-async function loadFileCache(ttlSeconds) {
+async function loadFileCache(tokenHash, ttlSeconds) {
   try {
-    if (!fs.existsSync(CACHE_FILE)) return null;
-    const content = JSON.parse(fs.readFileSync(CACHE_FILE, "utf-8"));
+    const cacheFile = getCacheFilePath(tokenHash);
+    if (!fs.existsSync(cacheFile))
+      return null;
+    const content = JSON.parse(fs.readFileSync(cacheFile, "utf-8"));
     const ageSeconds = (Date.now() - content.timestamp) / 1e3;
     if (ageSeconds < ttlSeconds) {
       return content.data;
@@ -216,10 +240,11 @@ async function loadFileCache(ttlSeconds) {
     return null;
   }
 }
-async function saveFileCache(data) {
+async function saveFileCache(tokenHash, data) {
   try {
+    const cacheFile = getCacheFilePath(tokenHash);
     fs.writeFileSync(
-      CACHE_FILE,
+      cacheFile,
       JSON.stringify({
         data,
         timestamp: Date.now()
