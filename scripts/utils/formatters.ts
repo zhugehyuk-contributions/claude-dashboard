@@ -72,3 +72,23 @@ export function calculatePercent(current: number, total: number): number {
   if (total <= 0) return 0;
   return Math.min(100, Math.round((current / total) * 100));
 }
+
+/**
+ * Format duration in milliseconds to human readable format
+ * Examples: 3600000 -> "1h", 5400000 -> "1h30m", 300000 -> "5m"
+ */
+export function formatDuration(ms: number, t: { hours: string; minutes: string }): string {
+  if (ms <= 0) return `0${t.minutes}`;
+
+  const totalMinutes = Math.floor(ms / (1000 * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+
+  if (hours > 0 && minutes > 0) {
+    return `${hours}${t.hours}${minutes}${t.minutes}`;
+  }
+  if (hours > 0) {
+    return `${hours}${t.hours}`;
+  }
+  return `${minutes}${t.minutes}`;
+}

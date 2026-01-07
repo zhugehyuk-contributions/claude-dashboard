@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
 // scripts/statusline.ts
-import { readFile as readFile3 } from "fs/promises";
-import { join as join2 } from "path";
-import { homedir as homedir2 } from "os";
+import { readFile as readFile5 } from "fs/promises";
+import { join as join4 } from "path";
+import { homedir as homedir3 } from "os";
 
 // scripts/types.ts
 var DEFAULT_CONFIG = {
   language: "auto",
   plan: "max",
+  displayMode: "compact",
   cache: {
     ttlSeconds: 60
   }
@@ -46,73 +47,6 @@ function getColorForPercent(percent) {
 }
 function colorize(text, color) {
   return `${color}${text}${RESET}`;
-}
-
-// scripts/utils/formatters.ts
-function formatTokens(tokens) {
-  if (tokens >= 1e6) {
-    const value = tokens / 1e6;
-    return value >= 10 ? `${Math.round(value)}M` : `${value.toFixed(1)}M`;
-  }
-  if (tokens >= 1e3) {
-    const value = tokens / 1e3;
-    return value >= 10 ? `${Math.round(value)}K` : `${value.toFixed(1)}K`;
-  }
-  return String(tokens);
-}
-function formatCost(cost) {
-  return `$${cost.toFixed(2)}`;
-}
-function formatTimeRemaining(resetAt, t) {
-  const reset = typeof resetAt === "string" ? new Date(resetAt) : resetAt;
-  const now = /* @__PURE__ */ new Date();
-  const diffMs = reset.getTime() - now.getTime();
-  if (diffMs <= 0)
-    return `0${t.time.minutes}`;
-  const totalMinutes = Math.floor(diffMs / (1e3 * 60));
-  const hours = Math.floor(totalMinutes / 60);
-  const minutes = totalMinutes % 60;
-  if (hours > 0) {
-    return `${hours}${t.time.hours}${minutes}${t.time.minutes}`;
-  }
-  return `${minutes}${t.time.minutes}`;
-}
-function shortenModelName(displayName) {
-  const lower = displayName.toLowerCase();
-  if (lower.includes("opus"))
-    return "Opus";
-  if (lower.includes("sonnet"))
-    return "Sonnet";
-  if (lower.includes("haiku"))
-    return "Haiku";
-  const parts = displayName.split(/\s+/);
-  if (parts.length > 1 && parts[0].toLowerCase() === "claude") {
-    return parts[1];
-  }
-  return displayName;
-}
-function calculatePercent(current, total) {
-  if (total <= 0)
-    return 0;
-  return Math.min(100, Math.round(current / total * 100));
-}
-
-// scripts/utils/progress-bar.ts
-var DEFAULT_PROGRESS_BAR_CONFIG = {
-  width: 10,
-  filledChar: "\u2588",
-  // █ (full block)
-  emptyChar: "\u2591"
-  // ░ (light shade)
-};
-function renderProgressBar(percent, config = DEFAULT_PROGRESS_BAR_CONFIG) {
-  const { width, filledChar, emptyChar } = config;
-  const clampedPercent = Math.max(0, Math.min(100, percent));
-  const filled = Math.round(clampedPercent / 100 * width);
-  const empty = width - filled;
-  const bar = filledChar.repeat(filled) + emptyChar.repeat(empty);
-  const color = getColorForPercent(clampedPercent);
-  return `${color}${bar}${RESET}`;
 }
 
 // scripts/utils/api-client.ts
@@ -167,7 +101,7 @@ function hashToken(token) {
 }
 
 // scripts/version.ts
-var VERSION = "1.1.0";
+var VERSION = "1.2.0";
 
 // scripts/utils/api-client.ts
 var API_TIMEOUT_MS = 5e3;
@@ -334,10 +268,22 @@ var en_default = {
   },
   time: {
     hours: "h",
-    minutes: "m"
+    minutes: "m",
+    seconds: "s"
   },
   errors: {
     no_context: "No context yet"
+  },
+  widgets: {
+    tools: "Tools",
+    done: "done",
+    running: "running",
+    agent: "Agent",
+    todos: "Todos",
+    claudeMd: "CLAUDE.md",
+    rules: "Rules",
+    mcps: "MCP",
+    hooks: "Hooks"
   }
 };
 
@@ -356,10 +302,22 @@ var ko_default = {
   },
   time: {
     hours: "\uC2DC\uAC04",
-    minutes: "\uBD84"
+    minutes: "\uBD84",
+    seconds: "\uCD08"
   },
   errors: {
     no_context: "\uCEE8\uD14D\uC2A4\uD2B8 \uC5C6\uC74C"
+  },
+  widgets: {
+    tools: "\uB3C4\uAD6C",
+    done: "\uC644\uB8CC",
+    running: "\uC2E4\uD589\uC911",
+    agent: "\uC5D0\uC774\uC804\uD2B8",
+    todos: "\uD560\uC77C",
+    claudeMd: "CLAUDE.md",
+    rules: "\uADDC\uCE59",
+    mcps: "MCP",
+    hooks: "\uD6C5"
   }
 };
 
@@ -385,9 +343,720 @@ function getTranslations(config) {
   return LOCALES[lang] || LOCALES.en;
 }
 
+// scripts/utils/formatters.ts
+function formatTokens(tokens) {
+  if (tokens >= 1e6) {
+    const value = tokens / 1e6;
+    return value >= 10 ? `${Math.round(value)}M` : `${value.toFixed(1)}M`;
+  }
+  if (tokens >= 1e3) {
+    const value = tokens / 1e3;
+    return value >= 10 ? `${Math.round(value)}K` : `${value.toFixed(1)}K`;
+  }
+  return String(tokens);
+}
+function formatCost(cost) {
+  return `$${cost.toFixed(2)}`;
+}
+function formatTimeRemaining(resetAt, t) {
+  const reset = typeof resetAt === "string" ? new Date(resetAt) : resetAt;
+  const now = /* @__PURE__ */ new Date();
+  const diffMs = reset.getTime() - now.getTime();
+  if (diffMs <= 0)
+    return `0${t.time.minutes}`;
+  const totalMinutes = Math.floor(diffMs / (1e3 * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0) {
+    return `${hours}${t.time.hours}${minutes}${t.time.minutes}`;
+  }
+  return `${minutes}${t.time.minutes}`;
+}
+function shortenModelName(displayName) {
+  const lower = displayName.toLowerCase();
+  if (lower.includes("opus"))
+    return "Opus";
+  if (lower.includes("sonnet"))
+    return "Sonnet";
+  if (lower.includes("haiku"))
+    return "Haiku";
+  const parts = displayName.split(/\s+/);
+  if (parts.length > 1 && parts[0].toLowerCase() === "claude") {
+    return parts[1];
+  }
+  return displayName;
+}
+function calculatePercent(current, total) {
+  if (total <= 0)
+    return 0;
+  return Math.min(100, Math.round(current / total * 100));
+}
+function formatDuration(ms, t) {
+  if (ms <= 0)
+    return `0${t.minutes}`;
+  const totalMinutes = Math.floor(ms / (1e3 * 60));
+  const hours = Math.floor(totalMinutes / 60);
+  const minutes = totalMinutes % 60;
+  if (hours > 0 && minutes > 0) {
+    return `${hours}${t.hours}${minutes}${t.minutes}`;
+  }
+  if (hours > 0) {
+    return `${hours}${t.hours}`;
+  }
+  return `${minutes}${t.minutes}`;
+}
+
+// scripts/widgets/model.ts
+var modelWidget = {
+  id: "model",
+  name: "Model",
+  async getData(ctx) {
+    const { model } = ctx.stdin;
+    if (!model?.display_name) {
+      return null;
+    }
+    return {
+      id: model.id,
+      displayName: model.display_name
+    };
+  },
+  render(data) {
+    const shortName = shortenModelName(data.displayName);
+    return `${COLORS.cyan}\u{1F916} ${shortName}${RESET}`;
+  }
+};
+
+// scripts/utils/progress-bar.ts
+var DEFAULT_PROGRESS_BAR_CONFIG = {
+  width: 10,
+  filledChar: "\u2588",
+  // █ (full block)
+  emptyChar: "\u2591"
+  // ░ (light shade)
+};
+function renderProgressBar(percent, config = DEFAULT_PROGRESS_BAR_CONFIG) {
+  const { width, filledChar, emptyChar } = config;
+  const clampedPercent = Math.max(0, Math.min(100, percent));
+  const filled = Math.round(clampedPercent / 100 * width);
+  const empty = width - filled;
+  const bar = filledChar.repeat(filled) + emptyChar.repeat(empty);
+  const color = getColorForPercent(clampedPercent);
+  return `${color}${bar}${RESET}`;
+}
+
+// scripts/widgets/context.ts
+var contextWidget = {
+  id: "context",
+  name: "Context",
+  async getData(ctx) {
+    const { context_window } = ctx.stdin;
+    const usage = context_window?.current_usage;
+    if (!usage) {
+      return null;
+    }
+    const inputTokens = usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
+    const outputTokens = usage.output_tokens;
+    const totalTokens = inputTokens + outputTokens;
+    const contextSize = context_window.context_window_size;
+    const percentage = calculatePercent(inputTokens, contextSize);
+    return {
+      inputTokens,
+      outputTokens,
+      totalTokens,
+      contextSize,
+      percentage
+    };
+  },
+  render(data) {
+    const parts = [];
+    parts.push(renderProgressBar(data.percentage));
+    const percentColor = getColorForPercent(data.percentage);
+    parts.push(colorize(`${data.percentage}%`, percentColor));
+    parts.push(
+      `${formatTokens(data.inputTokens)}/${formatTokens(data.contextSize)}`
+    );
+    const separator = ` ${COLORS.dim}\u2502${RESET} `;
+    return parts.join(separator);
+  }
+};
+
+// scripts/widgets/cost.ts
+var costWidget = {
+  id: "cost",
+  name: "Cost",
+  async getData(ctx) {
+    const { cost } = ctx.stdin;
+    if (cost?.total_cost_usd === void 0) {
+      return null;
+    }
+    return {
+      totalCostUsd: cost.total_cost_usd
+    };
+  },
+  render(data) {
+    return colorize(formatCost(data.totalCostUsd), COLORS.yellow);
+  }
+};
+
+// scripts/widgets/rate-limit.ts
+var rateLimit5hWidget = {
+  id: "rateLimit5h",
+  name: "5h Rate Limit",
+  async getData(ctx) {
+    const limits = ctx.rateLimits;
+    if (!limits?.five_hour) {
+      return null;
+    }
+    return {
+      utilization: Math.round(limits.five_hour.utilization),
+      resetsAt: limits.five_hour.resets_at
+    };
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    const color = getColorForPercent(data.utilization);
+    let text = `${t.labels["5h"]}: ${colorize(`${data.utilization}%`, color)}`;
+    if (data.resetsAt) {
+      const remaining = formatTimeRemaining(data.resetsAt, t);
+      text += ` (${remaining})`;
+    }
+    return text;
+  }
+};
+var rateLimit7dWidget = {
+  id: "rateLimit7d",
+  name: "7d Rate Limit",
+  async getData(ctx) {
+    if (ctx.config.plan !== "max") {
+      return null;
+    }
+    const limits = ctx.rateLimits;
+    if (!limits?.seven_day) {
+      return null;
+    }
+    return {
+      utilization: Math.round(limits.seven_day.utilization),
+      resetsAt: limits.seven_day.resets_at
+    };
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    const color = getColorForPercent(data.utilization);
+    return `${t.labels["7d_all"]}: ${colorize(`${data.utilization}%`, color)}`;
+  }
+};
+var rateLimit7dSonnetWidget = {
+  id: "rateLimit7dSonnet",
+  name: "7d Sonnet Rate Limit",
+  async getData(ctx) {
+    if (ctx.config.plan !== "max") {
+      return null;
+    }
+    const limits = ctx.rateLimits;
+    if (!limits?.seven_day_sonnet) {
+      return null;
+    }
+    return {
+      utilization: Math.round(limits.seven_day_sonnet.utilization),
+      resetsAt: limits.seven_day_sonnet.resets_at
+    };
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    const color = getColorForPercent(data.utilization);
+    return `${t.labels["7d_sonnet"]}: ${colorize(`${data.utilization}%`, color)}`;
+  }
+};
+
+// scripts/widgets/project-info.ts
+import { execFileSync as execFileSync2 } from "child_process";
+import { basename } from "path";
+function getGitBranch(cwd) {
+  try {
+    const result = execFileSync2("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+      cwd,
+      encoding: "utf-8",
+      timeout: 500,
+      // 500ms timeout to prevent blocking
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    return result.trim() || void 0;
+  } catch {
+    return void 0;
+  }
+}
+var projectInfoWidget = {
+  id: "projectInfo",
+  name: "Project Info",
+  async getData(ctx) {
+    const currentDir = ctx.stdin.workspace?.current_dir;
+    if (!currentDir) {
+      return null;
+    }
+    const dirName = basename(currentDir);
+    const gitBranch = getGitBranch(currentDir);
+    return {
+      dirName,
+      gitBranch
+    };
+  },
+  render(data) {
+    const parts = [];
+    parts.push(colorize(`\u{1F4C1} ${data.dirName}`, COLORS.cyan));
+    if (data.gitBranch) {
+      parts.push(colorize(`(${data.gitBranch})`, COLORS.magenta));
+    }
+    return parts.join(" ");
+  }
+};
+
+// scripts/widgets/config-counts.ts
+import { readdir as readdir2, access } from "fs/promises";
+import { join as join2 } from "path";
+import { constants } from "fs";
+async function pathExists(path2) {
+  try {
+    await access(path2, constants.F_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function countFiles(dir, pattern) {
+  try {
+    const files = await readdir2(dir);
+    if (pattern) {
+      return files.filter((f) => pattern.test(f)).length;
+    }
+    return files.length;
+  } catch {
+    return 0;
+  }
+}
+async function countClaudeMd(projectDir) {
+  let count = 0;
+  if (await pathExists(join2(projectDir, "CLAUDE.md"))) {
+    count++;
+  }
+  if (await pathExists(join2(projectDir, ".claude", "CLAUDE.md"))) {
+    count++;
+  }
+  return count;
+}
+async function countMcps(projectDir) {
+  const mcpPath = join2(projectDir, ".claude", "mcp.json");
+  if (await pathExists(mcpPath)) {
+    try {
+      const { readFile: readFile6 } = await import("fs/promises");
+      const content = await readFile6(mcpPath, "utf-8");
+      const config = JSON.parse(content);
+      return Object.keys(config.mcpServers || {}).length;
+    } catch {
+      return 0;
+    }
+  }
+  return 0;
+}
+var configCountsWidget = {
+  id: "configCounts",
+  name: "Config Counts",
+  async getData(ctx) {
+    const currentDir = ctx.stdin.workspace?.current_dir;
+    if (!currentDir) {
+      return null;
+    }
+    const claudeDir = join2(currentDir, ".claude");
+    const [claudeMd, rules, mcps, hooks] = await Promise.all([
+      countClaudeMd(currentDir),
+      countFiles(join2(claudeDir, "rules")),
+      countMcps(currentDir),
+      countFiles(join2(claudeDir, "hooks"))
+    ]);
+    if (claudeMd === 0 && rules === 0 && mcps === 0 && hooks === 0) {
+      return null;
+    }
+    return { claudeMd, rules, mcps, hooks };
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    const parts = [];
+    if (data.claudeMd > 0) {
+      parts.push(`${t.widgets.claudeMd}: ${data.claudeMd}`);
+    }
+    if (data.rules > 0) {
+      parts.push(`${t.widgets.rules}: ${data.rules}`);
+    }
+    if (data.mcps > 0) {
+      parts.push(`${t.widgets.mcps}: ${data.mcps}`);
+    }
+    if (data.hooks > 0) {
+      parts.push(`${t.widgets.hooks}: ${data.hooks}`);
+    }
+    return colorize(parts.join(", "), COLORS.dim);
+  }
+};
+
+// scripts/widgets/session-duration.ts
+import { readFile as readFile3, writeFile as writeFile2, mkdir as mkdir2 } from "fs/promises";
+import { join as join3 } from "path";
+import { homedir as homedir2 } from "os";
+var SESSION_DIR = join3(homedir2(), ".cache", "claude-dashboard", "sessions");
+async function getSessionStartTime(sessionId) {
+  const sessionFile = join3(SESSION_DIR, `${sessionId}.json`);
+  try {
+    const content = await readFile3(sessionFile, "utf-8");
+    const data = JSON.parse(content);
+    return data.startTime;
+  } catch {
+    const startTime = Date.now();
+    try {
+      await mkdir2(SESSION_DIR, { recursive: true });
+      await writeFile2(sessionFile, JSON.stringify({ startTime }), "utf-8");
+    } catch {
+    }
+    return startTime;
+  }
+}
+var sessionDurationWidget = {
+  id: "sessionDuration",
+  name: "Session Duration",
+  async getData(ctx) {
+    const sessionId = ctx.stdin.session_id || "default";
+    const startTime = await getSessionStartTime(sessionId);
+    const elapsedMs = Date.now() - startTime;
+    return { elapsedMs };
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    const duration = formatDuration(data.elapsedMs, t.time);
+    return colorize(`\u23F1 ${duration}`, COLORS.dim);
+  }
+};
+
+// scripts/utils/transcript-parser.ts
+import { readFile as readFile4, stat as stat2 } from "fs/promises";
+var cachedTranscript = null;
+function parseJsonlLine(line) {
+  try {
+    return JSON.parse(line);
+  } catch {
+    return null;
+  }
+}
+async function parseTranscript(transcriptPath) {
+  try {
+    const fileStat = await stat2(transcriptPath);
+    const mtime = fileStat.mtimeMs;
+    if (cachedTranscript?.path === transcriptPath && cachedTranscript.mtime === mtime) {
+      return cachedTranscript.data;
+    }
+    const content = await readFile4(transcriptPath, "utf-8");
+    const lines = content.trim().split("\n").filter(Boolean);
+    const entries = [];
+    for (const line of lines) {
+      const entry = parseJsonlLine(line);
+      if (entry) {
+        entries.push(entry);
+      }
+    }
+    const toolUses = /* @__PURE__ */ new Map();
+    const toolResults = /* @__PURE__ */ new Set();
+    let sessionStartTime;
+    for (const entry of entries) {
+      if (!sessionStartTime && entry.timestamp) {
+        sessionStartTime = new Date(entry.timestamp).getTime();
+      }
+      if (entry.type === "assistant" && entry.message?.content) {
+        for (const block of entry.message.content) {
+          if (block.type === "tool_use" && block.id && block.name) {
+            toolUses.set(block.id, {
+              name: block.name,
+              timestamp: entry.timestamp
+            });
+          }
+        }
+      }
+      if (entry.type === "tool_result" && entry.message?.content) {
+        for (const block of entry.message.content) {
+          if (block.type === "tool_result" && block.id) {
+            toolResults.add(block.id);
+          }
+        }
+      }
+    }
+    const data = {
+      entries,
+      toolUses,
+      toolResults,
+      sessionStartTime
+    };
+    cachedTranscript = { path: transcriptPath, mtime, data };
+    return data;
+  } catch {
+    return null;
+  }
+}
+function getRunningTools(transcript) {
+  const running = [];
+  for (const [id, tool] of transcript.toolUses) {
+    if (!transcript.toolResults.has(id)) {
+      running.push({
+        name: tool.name,
+        startTime: tool.timestamp ? new Date(tool.timestamp).getTime() : Date.now()
+      });
+    }
+  }
+  return running;
+}
+function getCompletedToolCount(transcript) {
+  return transcript.toolResults.size;
+}
+function extractTodoProgress(transcript) {
+  let lastTodoWrite = null;
+  for (const [id, tool] of transcript.toolUses) {
+    if (tool.name === "TodoWrite" && transcript.toolResults.has(id)) {
+      for (const entry of transcript.entries) {
+        if (entry.type === "assistant" && entry.message?.content) {
+          for (const block of entry.message.content) {
+            if (block.type === "tool_use" && block.id === id && block.input) {
+              lastTodoWrite = block.input;
+            }
+          }
+        }
+      }
+    }
+  }
+  if (!lastTodoWrite || typeof lastTodoWrite !== "object") {
+    return null;
+  }
+  const input = lastTodoWrite;
+  if (!Array.isArray(input.todos)) {
+    return null;
+  }
+  const todos = input.todos;
+  const completed = todos.filter((t) => t.status === "completed").length;
+  const total = todos.length;
+  const current = todos.find(
+    (t) => t.status === "in_progress" || t.status === "pending"
+  );
+  return {
+    current: current ? {
+      content: current.content,
+      status: current.status
+    } : void 0,
+    completed,
+    total
+  };
+}
+function extractAgentStatus(transcript) {
+  const active = [];
+  let completed = 0;
+  for (const [id, tool] of transcript.toolUses) {
+    if (tool.name === "Task") {
+      if (transcript.toolResults.has(id)) {
+        completed++;
+      } else {
+        for (const entry of transcript.entries) {
+          if (entry.type === "assistant" && entry.message?.content) {
+            for (const block of entry.message.content) {
+              if (block.type === "tool_use" && block.id === id && block.input) {
+                const input = block.input;
+                active.push({
+                  name: input.subagent_type || "Agent",
+                  description: input.description
+                });
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+  return { active, completed };
+}
+
+// scripts/widgets/tool-activity.ts
+var toolActivityWidget = {
+  id: "toolActivity",
+  name: "Tool Activity",
+  async getData(ctx) {
+    const transcriptPath = ctx.stdin.transcript_path;
+    if (!transcriptPath) {
+      return null;
+    }
+    const transcript = await parseTranscript(transcriptPath);
+    if (!transcript) {
+      return null;
+    }
+    const running = getRunningTools(transcript);
+    const completed = getCompletedToolCount(transcript);
+    return { running, completed };
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    if (data.running.length === 0) {
+      return colorize(
+        `${t.widgets.tools}: ${data.completed} ${t.widgets.done}`,
+        COLORS.dim
+      );
+    }
+    const runningNames = data.running.slice(0, 2).map((r) => r.name).join(", ");
+    const more = data.running.length > 2 ? ` +${data.running.length - 2}` : "";
+    return `${colorize("\u2699\uFE0F", COLORS.yellow)} ${runningNames}${more} (${data.completed} ${t.widgets.done})`;
+  }
+};
+
+// scripts/widgets/agent-status.ts
+var agentStatusWidget = {
+  id: "agentStatus",
+  name: "Agent Status",
+  async getData(ctx) {
+    const transcriptPath = ctx.stdin.transcript_path;
+    if (!transcriptPath) {
+      return null;
+    }
+    const transcript = await parseTranscript(transcriptPath);
+    if (!transcript) {
+      return null;
+    }
+    const status = extractAgentStatus(transcript);
+    if (status.active.length === 0 && status.completed === 0) {
+      return null;
+    }
+    return status;
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    if (data.active.length === 0) {
+      return colorize(
+        `${t.widgets.agent}: ${data.completed} ${t.widgets.done}`,
+        COLORS.dim
+      );
+    }
+    const activeAgent = data.active[0];
+    const agentText = activeAgent.description ? `${activeAgent.name}: ${activeAgent.description.slice(0, 20)}${activeAgent.description.length > 20 ? "..." : ""}` : activeAgent.name;
+    const more = data.active.length > 1 ? ` +${data.active.length - 1}` : "";
+    return `${colorize("\u{1F916}", COLORS.cyan)} ${t.widgets.agent}: ${agentText}${more}`;
+  }
+};
+
+// scripts/widgets/todo-progress.ts
+var todoProgressWidget = {
+  id: "todoProgress",
+  name: "Todo Progress",
+  async getData(ctx) {
+    const transcriptPath = ctx.stdin.transcript_path;
+    if (!transcriptPath) {
+      return null;
+    }
+    const transcript = await parseTranscript(transcriptPath);
+    if (!transcript) {
+      return null;
+    }
+    const progress = extractTodoProgress(transcript);
+    if (!progress) {
+      return null;
+    }
+    return progress;
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    if (data.total === 0) {
+      return "";
+    }
+    const percent = calculatePercent(data.completed, data.total);
+    const color = getColorForPercent(100 - percent);
+    if (data.current) {
+      const taskName = data.current.content.length > 15 ? data.current.content.slice(0, 15) + "..." : data.current.content;
+      return `${colorize("\u2713", COLORS.green)} ${taskName} [${data.completed}/${data.total}]`;
+    }
+    return colorize(
+      `${t.widgets.todos}: ${data.completed}/${data.total}`,
+      data.completed === data.total ? COLORS.green : color
+    );
+  }
+};
+
+// scripts/widgets/index.ts
+var widgetRegistry = /* @__PURE__ */ new Map([
+  ["model", modelWidget],
+  ["context", contextWidget],
+  ["cost", costWidget],
+  ["rateLimit5h", rateLimit5hWidget],
+  ["rateLimit7d", rateLimit7dWidget],
+  ["rateLimit7dSonnet", rateLimit7dSonnetWidget],
+  ["projectInfo", projectInfoWidget],
+  ["configCounts", configCountsWidget],
+  ["sessionDuration", sessionDurationWidget],
+  ["toolActivity", toolActivityWidget],
+  ["agentStatus", agentStatusWidget],
+  ["todoProgress", todoProgressWidget]
+]);
+function getWidget(id) {
+  return widgetRegistry.get(id);
+}
+function getLines(config) {
+  if (config.displayMode === "custom" && config.lines) {
+    return config.lines;
+  }
+  const presets = {
+    compact: [
+      ["model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"]
+    ],
+    normal: [
+      ["model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"],
+      ["projectInfo", "sessionDuration", "todoProgress"]
+    ],
+    detailed: [
+      ["model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"],
+      ["projectInfo", "sessionDuration", "todoProgress"],
+      ["configCounts", "toolActivity", "agentStatus"]
+    ]
+  };
+  return presets[config.displayMode] || presets.compact;
+}
+async function renderWidget(widgetId, ctx) {
+  const widget = getWidget(widgetId);
+  if (!widget) {
+    return null;
+  }
+  try {
+    const data = await widget.getData(ctx);
+    if (!data) {
+      return null;
+    }
+    const output = widget.render(data, ctx);
+    return { id: widgetId, output };
+  } catch {
+    return null;
+  }
+}
+async function renderLine(widgetIds, ctx) {
+  const results = await Promise.all(
+    widgetIds.map((id) => renderWidget(id, ctx))
+  );
+  const separator = ` ${COLORS.dim}\u2502${RESET} `;
+  const outputs = results.filter((r) => r !== null && r.output.length > 0).map((r) => r.output);
+  return outputs.join(separator);
+}
+async function renderAllLines(ctx) {
+  const lines = getLines(ctx.config);
+  const renderedLines = [];
+  for (const lineWidgets of lines) {
+    const rendered = await renderLine(lineWidgets, ctx);
+    if (rendered.length > 0) {
+      renderedLines.push(rendered);
+    }
+  }
+  return renderedLines;
+}
+async function formatOutput(ctx) {
+  const lines = await renderAllLines(ctx);
+  return lines.join("\n");
+}
+
 // scripts/statusline.ts
-var CONFIG_PATH = join2(homedir2(), ".claude", "claude-dashboard.local.json");
-var SEPARATOR = ` ${COLORS.dim}\u2502${RESET} `;
+var CONFIG_PATH = join4(homedir3(), ".claude", "claude-dashboard.local.json");
 async function readStdin() {
   try {
     const chunks = [];
@@ -402,73 +1071,36 @@ async function readStdin() {
 }
 async function loadConfig() {
   try {
-    const content = await readFile3(CONFIG_PATH, "utf-8");
+    const content = await readFile5(CONFIG_PATH, "utf-8");
     const userConfig = JSON.parse(content);
-    return { ...DEFAULT_CONFIG, ...userConfig };
+    const config = {
+      ...DEFAULT_CONFIG,
+      ...userConfig
+    };
+    if (!config.displayMode) {
+      config.displayMode = "normal";
+    }
+    return config;
   } catch {
     return DEFAULT_CONFIG;
   }
 }
-function buildContextSection(input, t) {
-  const parts = [];
-  const modelName = shortenModelName(input.model.display_name);
-  parts.push(`${COLORS.cyan}\u{1F916} ${modelName}${RESET}`);
-  const usage = input.context_window.current_usage;
-  if (!usage) {
-    parts.push(colorize(t.errors.no_context, COLORS.dim));
-    return parts.join(SEPARATOR);
-  }
-  const currentTokens = usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
-  const totalTokens = input.context_window.context_window_size;
-  const percent = calculatePercent(currentTokens, totalTokens);
-  parts.push(renderProgressBar(percent));
-  const percentColor = getColorForPercent(percent);
-  parts.push(colorize(`${percent}%`, percentColor));
-  parts.push(`${formatTokens(currentTokens)}/${formatTokens(totalTokens)}`);
-  parts.push(colorize(formatCost(input.cost.total_cost_usd), COLORS.yellow));
-  return parts.join(SEPARATOR);
-}
-function buildRateLimitsSection(limits, config, t) {
-  if (!limits) {
-    return colorize("\u26A0\uFE0F", COLORS.yellow);
-  }
-  const parts = [];
-  if (limits.five_hour) {
-    const pct = Math.round(limits.five_hour.utilization);
-    const color = getColorForPercent(pct);
-    let text = `${t.labels["5h"]}: ${colorize(`${pct}%`, color)}`;
-    if (limits.five_hour.resets_at) {
-      const remaining = formatTimeRemaining(limits.five_hour.resets_at, t);
-      text += ` (${remaining})`;
-    }
-    parts.push(text);
-  }
-  if (config.plan === "max") {
-    if (limits.seven_day) {
-      const pct = Math.round(limits.seven_day.utilization);
-      const color = getColorForPercent(pct);
-      parts.push(`${t.labels["7d_all"]}: ${colorize(`${pct}%`, color)}`);
-    }
-    if (limits.seven_day_sonnet) {
-      const pct = Math.round(limits.seven_day_sonnet.utilization);
-      const color = getColorForPercent(pct);
-      parts.push(`${t.labels["7d_sonnet"]}: ${colorize(`${pct}%`, color)}`);
-    }
-  }
-  return parts.join(SEPARATOR);
-}
 async function main() {
   const config = await loadConfig();
-  const t = getTranslations(config);
-  const input = await readStdin();
-  if (!input) {
+  const translations = getTranslations(config);
+  const stdin = await readStdin();
+  if (!stdin) {
     console.log(colorize("\u26A0\uFE0F", COLORS.yellow));
     return;
   }
-  const contextSection = buildContextSection(input, t);
-  const limits = await fetchUsageLimits(config.cache.ttlSeconds);
-  const rateLimitsSection = buildRateLimitsSection(limits, config, t);
-  const output = [contextSection, rateLimitsSection].filter(Boolean).join(SEPARATOR);
+  const rateLimits = await fetchUsageLimits(config.cache.ttlSeconds);
+  const ctx = {
+    stdin,
+    config,
+    translations,
+    rateLimits
+  };
+  const output = await formatOutput(ctx);
   console.log(output);
 }
 main().catch(() => {

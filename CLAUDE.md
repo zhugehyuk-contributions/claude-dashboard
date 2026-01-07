@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**claude-dashboard** is a Claude Code plugin that provides a comprehensive status line showing context usage, API rate limits, and cost tracking.
+**claude-dashboard** is a Claude Code plugin that provides a comprehensive status line with modular widget system, multi-line display, context usage, API rate limits, and cost tracking.
 
 ## Tech Stack
 
@@ -23,19 +23,88 @@ claude-dashboard/
 ├── scripts/
 │   ├── statusline.ts        # Main entry point
 │   ├── types.ts             # TypeScript interfaces
+│   ├── widgets/             # Widget system
+│   │   ├── base.ts          # Widget interface
+│   │   ├── index.ts         # Widget registry & orchestrator
+│   │   ├── model.ts         # Model widget
+│   │   ├── context.ts       # Context usage widget
+│   │   ├── cost.ts          # Cost widget
+│   │   ├── rate-limit.ts    # Rate limit widgets (5h, 7d)
+│   │   ├── project-info.ts  # Project info widget
+│   │   ├── config-counts.ts # Config counts widget
+│   │   ├── session-duration.ts # Session duration widget
+│   │   ├── tool-activity.ts # Tool activity widget
+│   │   ├── agent-status.ts  # Agent status widget
+│   │   └── todo-progress.ts # Todo progress widget
 │   └── utils/
 │       ├── api-client.ts    # OAuth API client with caching
 │       ├── colors.ts        # ANSI color codes
 │       ├── credentials.ts   # Keychain/credentials extraction
-│       ├── formatters.ts    # Token/cost/time formatting
+│       ├── formatters.ts    # Token/cost/time/duration formatting
+│       ├── hash.ts          # Token hashing for cache keys
 │       ├── i18n.ts          # Internationalization
-│       └── progress-bar.ts  # Progress bar rendering
+│       ├── progress-bar.ts  # Progress bar rendering
+│       └── transcript-parser.ts # Transcript JSONL parsing
 ├── locales/
 │   ├── en.json              # English translations
 │   └── ko.json              # Korean translations
 ├── dist/
 │   └── index.js             # Built output (committed)
 └── package.json
+```
+
+## Widget Architecture
+
+### Widget Interface
+
+Each widget implements the `Widget` interface:
+
+```typescript
+interface Widget<T extends WidgetData> {
+  id: WidgetId;
+  name: string;
+  getData(ctx: WidgetContext): Promise<T | null>;
+  render(data: T, ctx: WidgetContext): string;
+}
+```
+
+### Available Widgets
+
+| Widget ID | Data Source | Description |
+|-----------|-------------|-------------|
+| `model` | stdin | Model name with emoji |
+| `context` | stdin | Progress bar, %, tokens |
+| `cost` | stdin | Session cost |
+| `rateLimit5h` | API | 5-hour rate limit |
+| `rateLimit7d` | API | 7-day rate limit (Max) |
+| `rateLimit7dSonnet` | API | 7-day Sonnet limit (Max) |
+| `projectInfo` | stdin + git | Directory + branch |
+| `configCounts` | filesystem | CLAUDE.md, rules, MCPs, hooks |
+| `sessionDuration` | file | Session duration |
+| `toolActivity` | transcript | Tool tracking |
+| `agentStatus` | transcript | Agent tracking |
+| `todoProgress` | transcript | Todo completion |
+
+### Display Modes
+
+```typescript
+type DisplayMode = 'compact' | 'normal' | 'detailed' | 'custom';
+
+// Additive approach: each mode adds lines, widgets stay in same position
+const DISPLAY_PRESETS = {
+  compact: [
+    ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
+  ],
+  normal: [
+    ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
+    ['projectInfo', 'sessionDuration', 'todoProgress'],
+  ],
+  detailed: [
+    ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
+    ['projectInfo', 'sessionDuration', 'todoProgress'],
+    ['configCounts', 'toolActivity', 'agentStatus'],
+  ],
+};
 ```
 
 ## Development Workflow
@@ -48,7 +117,7 @@ npm install
 npm run build
 
 # Test locally
-echo '{"model":{"display_name":"Opus"},...}' | node dist/index.js
+echo '{"model":{"display_name":"Opus"},"workspace":{"current_dir":"/tmp"},...}' | node dist/index.js
 ```
 
 ## Code Style
@@ -62,32 +131,43 @@ echo '{"model":{"display_name":"Opus"},...}' | node dist/index.js
 
 1. **dist/index.js is committed** - Plugin users don't need to build
 2. **60-second API cache** - Avoid rate limiting
-3. **Graceful degradation** - Show ⚠️ on API errors, not crash
+3. **Graceful degradation** - Show ⚠️ on API errors, widgets return null on failure
 4. **i18n** - All user-facing strings in locales/*.json
+5. **Widget isolation** - Each widget handles its own data fetching and rendering
 
 ## Testing Checklist
 
 Before committing:
 - [ ] `npm run build` succeeds
-- [ ] Max plan output format correct
-- [ ] Pro plan output format correct
+- [ ] All display modes (compact/normal/detailed) work
+- [ ] Pro/Max plan output format correct
 - [ ] Korean/English switching works
 - [ ] API error shows ⚠️ instead of crash
+- [ ] Missing data gracefully hides widgets
 
 ## Common Tasks
+
+### Adding a new widget
+
+1. Create `scripts/widgets/{widget-name}.ts`
+2. Implement `Widget` interface with `getData()` and `render()`
+3. Add widget ID to `WidgetId` type in `types.ts`
+4. Register widget in `scripts/widgets/index.ts`
+5. Add translations to `locales/*.json` if needed
+6. Update `DISPLAY_PRESETS` if adding to default modes
+7. Rebuild and test
 
 ### Adding a new locale
 
 1. Create `locales/{lang}.json` copying from `en.json`
 2. Update `scripts/utils/i18n.ts` to import new locale
-3. Test with `/claude-dashboard:setup {lang}`
+3. Test with `/claude-dashboard:setup normal {lang}`
 
-### Modifying status line format
+### Modifying display modes
 
-1. Edit `scripts/statusline.ts` `formatOutput()` function
-2. Update `README.md` examples
-3. Update `commands/setup.md` examples
-4. Rebuild and test
+1. Edit `DISPLAY_PRESETS` in `scripts/types.ts`
+2. Update `README.md` and `commands/setup.md` examples
+3. Rebuild and test
 
 ### Updating API client
 
@@ -108,6 +188,12 @@ Before committing:
 1. **Memory cache** - In-process Map, fastest
 2. **File cache** - Persists across process restarts
 3. **API fetch** - Falls back when cache misses
+
+### Transcript Caching
+
+- Transcript parser caches parsed data with mtime check
+- Re-parses only when file changes
+- Shared across tool/agent/todo widgets
 
 ### Cleanup Behavior
 

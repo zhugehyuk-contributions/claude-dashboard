@@ -12,9 +12,21 @@
   },
   "time": {
     "hours": "h",
-    "minutes": "m"
+    "minutes": "m",
+    "seconds": "s"
   },
   "errors": {
     "no_context": "No context yet"
+  },
+  "widgets": {
+    "tools": "Tools",
+    "done": "done",
+    "running": "running",
+    "agent": "Agent",
+    "todos": "Todos",
+    "claudeMd": "CLAUDE.md",
+    "rules": "Rules",
+    "mcps": "MCP",
+    "hooks": "Hooks"
   }
 }

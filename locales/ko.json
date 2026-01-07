@@ -12,9 +12,21 @@
   },
   "time": {
     "hours": "시간",
-    "minutes": "분"
+    "minutes": "분",
+    "seconds": "초"
   },
   "errors": {
     "no_context": "컨텍스트 없음"
+  },
+  "widgets": {
+    "tools": "도구",
+    "done": "완료",
+    "running": "실행중",
+    "agent": "에이전트",
+    "todos": "할일",
+    "claudeMd": "CLAUDE.md",
+    "rules": "규칙",
+    "mcps": "MCP",
+    "hooks": "훅"
   }
 }

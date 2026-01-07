@@ -1,19 +1,22 @@
 #!/usr/bin/env node
 
+/**
+ * Claude Dashboard Status Line
+ * Displays model info, context usage, rate limits, and more
+ */
+
 import { readFile } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 
-import type { StdinInput, Config, Translations, UsageLimits } from './types.js';
+import type { StdinInput, Config, WidgetContext } from './types.js';
 import { DEFAULT_CONFIG } from './types.js';
-import { COLORS, RESET, getColorForPercent, colorize } from './utils/colors.js';
-import { formatTokens, formatCost, formatTimeRemaining, shortenModelName, calculatePercent } from './utils/formatters.js';
-import { renderProgressBar } from './utils/progress-bar.js';
+import { COLORS, colorize } from './utils/colors.js';
 import { fetchUsageLimits } from './utils/api-client.js';
 import { getTranslations } from './utils/i18n.js';
+import { formatOutput } from './widgets/index.js';
 
 const CONFIG_PATH = join(homedir(), '.claude', 'claude-dashboard.local.json');
-const SEPARATOR = ` ${COLORS.dim}│${RESET} `;
 
 /**
  * Read and parse stdin JSON
@@ -32,113 +35,28 @@ async function readStdin(): Promise<StdinInput | null> {
 }
 
 /**
- * Load user configuration
+ * Load user configuration with migration support
  */
 async function loadConfig(): Promise<Config> {
   try {
     const content = await readFile(CONFIG_PATH, 'utf-8');
     const userConfig = JSON.parse(content);
-    return { ...DEFAULT_CONFIG, ...userConfig };
+
+    // Migrate old config format (add displayMode if missing)
+    const config: Config = {
+      ...DEFAULT_CONFIG,
+      ...userConfig,
+    };
+
+    // Ensure displayMode exists (backward compatibility)
+    if (!config.displayMode) {
+      config.displayMode = 'normal';
+    }
+
+    return config;
   } catch {
     return DEFAULT_CONFIG;
   }
-}
-
-/**
- * Build context section: model, progress bar, %, tokens, cost
- */
-function buildContextSection(
-  input: StdinInput,
-  t: Translations
-): string {
-  const parts: string[] = [];
-
-  // Model name with emoji
-  const modelName = shortenModelName(input.model.display_name);
-  parts.push(`${COLORS.cyan}🤖 ${modelName}${RESET}`);
-
-  // Check if we have context usage data
-  const usage = input.context_window.current_usage;
-  if (!usage) {
-    parts.push(colorize(t.errors.no_context, COLORS.dim));
-    return parts.join(SEPARATOR);
-  }
-
-  // Calculate current tokens used
-  const currentTokens =
-    usage.input_tokens +
-    usage.cache_creation_input_tokens +
-    usage.cache_read_input_tokens;
-  const totalTokens = input.context_window.context_window_size;
-
-  // Calculate percentage
-  const percent = calculatePercent(currentTokens, totalTokens);
-
-  // Progress bar
-  parts.push(renderProgressBar(percent));
-
-  // Percentage with color
-  const percentColor = getColorForPercent(percent);
-  parts.push(colorize(`${percent}%`, percentColor));
-
-  // Token count
-  parts.push(`${formatTokens(currentTokens)}/${formatTokens(totalTokens)}`);
-
-  // Cost
-  parts.push(colorize(formatCost(input.cost.total_cost_usd), COLORS.yellow));
-
-  return parts.join(SEPARATOR);
-}
-
-/**
- * Build rate limits section based on plan type
- */
-function buildRateLimitsSection(
-  limits: UsageLimits | null,
-  config: Config,
-  t: Translations
-): string {
-  if (!limits) {
-    // Show warning icon if API failed
-    return colorize('⚠️', COLORS.yellow);
-  }
-
-  const parts: string[] = [];
-
-  // 5h rate limit (both Max and Pro)
-  if (limits.five_hour) {
-    // API returns utilization as 0-100, not 0-1
-    const pct = Math.round(limits.five_hour.utilization);
-    const color = getColorForPercent(pct);
-    let text = `${t.labels['5h']}: ${colorize(`${pct}%`, color)}`;
-
-    // Add reset time if available
-    if (limits.five_hour.resets_at) {
-      const remaining = formatTimeRemaining(limits.five_hour.resets_at, t);
-      text += ` (${remaining})`;
-    }
-
-    parts.push(text);
-  }
-
-  if (config.plan === 'max') {
-    // Max plan: Show 7d (all models) and 7d-S (Sonnet only)
-    if (limits.seven_day) {
-      const pct = Math.round(limits.seven_day.utilization);
-      const color = getColorForPercent(pct);
-      parts.push(`${t.labels['7d_all']}: ${colorize(`${pct}%`, color)}`);
-    }
-
-    // Sonnet only usage
-    if (limits.seven_day_sonnet) {
-      const pct = Math.round(limits.seven_day_sonnet.utilization);
-      const color = getColorForPercent(pct);
-      parts.push(`${t.labels['7d_sonnet']}: ${colorize(`${pct}%`, color)}`);
-    }
-  }
-  // Pro plan: Only 5h is shown (already added above)
-
-  return parts.join(SEPARATOR);
 }
 
 /**
@@ -149,28 +67,28 @@ async function main(): Promise<void> {
   const config = await loadConfig();
 
   // Get translations
-  const t = getTranslations(config);
+  const translations = getTranslations(config);
 
   // Read stdin
-  const input = await readStdin();
-  if (!input) {
+  const stdin = await readStdin();
+  if (!stdin) {
     console.log(colorize('⚠️', COLORS.yellow));
     return;
   }
 
-  // Build context section
-  const contextSection = buildContextSection(input, t);
-
   // Fetch rate limits (uses cache)
-  const limits = await fetchUsageLimits(config.cache.ttlSeconds);
+  const rateLimits = await fetchUsageLimits(config.cache.ttlSeconds);
 
-  // Build rate limits section
-  const rateLimitsSection = buildRateLimitsSection(limits, config, t);
+  // Create widget context
+  const ctx: WidgetContext = {
+    stdin,
+    config,
+    translations,
+    rateLimits,
+  };
 
-  // Combine sections
-  const output = [contextSection, rateLimitsSection]
-    .filter(Boolean)
-    .join(SEPARATOR);
+  // Format output using widget system
+  const output = await formatOutput(ctx);
 
   console.log(output);
 }
