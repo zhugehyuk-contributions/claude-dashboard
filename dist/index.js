@@ -220,7 +220,8 @@ async function saveFileCache(tokenHash, data) {
       JSON.stringify({
         data,
         timestamp: Date.now()
-      })
+      }),
+      { mode: 384 }
     );
     cleanupExpiredCache().catch(() => {
     });
@@ -504,8 +505,8 @@ var rateLimit5hWidget = {
   name: "5h Rate Limit",
   async getData(ctx) {
     const limits = ctx.rateLimits;
-    if (!limits?.five_hour) {
-      return null;
+    if (!limits || !limits.five_hour) {
+      return { utilization: 0, resetsAt: null, isError: true };
     }
     return {
       utilization: Math.round(limits.five_hour.utilization),
@@ -513,6 +514,9 @@ var rateLimit5hWidget = {
     };
   },
   render(data, ctx) {
+    if (data.isError) {
+      return colorize("\u26A0\uFE0F", COLORS.yellow);
+    }
     const { translations: t } = ctx;
     const color = getColorForPercent(data.utilization);
     let text = `${t.labels["5h"]}: ${colorize(`${data.utilization}%`, color)}`;
