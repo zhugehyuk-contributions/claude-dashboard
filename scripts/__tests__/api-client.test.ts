@@ -1,9 +1,22 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { mkdir, writeFile, readFile, rm, readdir, stat, utimes } from 'fs/promises';
+import { mkdir, writeFile, readFile, rm, readdir, stat, utimes, unlink } from 'fs/promises';
 import path from 'path';
 import os from 'os';
+import { hashToken } from '../utils/hash.js';
 
 const ACTUAL_CACHE_DIR = path.join(os.homedir(), '.cache', 'claude-dashboard');
+
+/**
+ * Helper to delete file cache for a specific token
+ */
+async function deleteFileCacheForToken(token: string): Promise<void> {
+  try {
+    const tokenHash = hashToken(token);
+    await unlink(path.join(ACTUAL_CACHE_DIR, `cache-${tokenHash}.json`));
+  } catch {
+    // File may not exist
+  }
+}
 
 // Mock credentials module
 vi.mock('../utils/credentials.js', () => ({
@@ -61,9 +74,13 @@ describe('api-client', () => {
     });
 
     it('should use cached data when available', async () => {
+      const testToken = 'cache-test-token';
+
       const { getCredentials } = await import('../utils/credentials.js');
-      // Use unique token for this test
-      vi.mocked(getCredentials).mockResolvedValue('cache-test-token');
+      vi.mocked(getCredentials).mockResolvedValue(testToken);
+
+      // Delete any existing file cache for this token
+      await deleteFileCacheForToken(testToken);
 
       // Mock fetch
       const mockLimits = {
