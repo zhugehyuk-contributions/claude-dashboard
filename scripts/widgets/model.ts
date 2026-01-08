@@ -13,18 +13,15 @@ export const modelWidget: Widget<ModelData> = {
 
   async getData(ctx: WidgetContext): Promise<ModelData | null> {
     const { model } = ctx.stdin;
-    if (!model?.display_name) {
-      return null;
-    }
 
     return {
-      id: model.id,
-      displayName: model.display_name,
+      id: model?.id || '',
+      displayName: model?.display_name || '-',
     };
   },
 
   render(data: ModelData): string {
     const shortName = shortenModelName(data.displayName);
-    return `${COLORS.cyan}🤖 ${shortName}${RESET}`;
+    return `${COLORS.pastelCyan}🤖 ${shortName}${RESET}`;
   },
 };

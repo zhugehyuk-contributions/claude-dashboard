@@ -22,7 +22,7 @@ var COLORS = {
   // Styles
   dim: "\x1B[2m",
   bold: "\x1B[1m",
-  // Foreground colors
+  // Foreground colors (standard ANSI 16)
   red: "\x1B[31m",
   green: "\x1B[32m",
   yellow: "\x1B[33m",
@@ -35,15 +35,30 @@ var COLORS = {
   brightRed: "\x1B[91m",
   brightGreen: "\x1B[92m",
   brightYellow: "\x1B[93m",
-  brightCyan: "\x1B[96m"
+  brightCyan: "\x1B[96m",
+  // Pastel colors (256-color mode)
+  pastelYellow: "\x1B[38;5;222m",
+  // Cream/soft yellow - for folders, cost
+  pastelCyan: "\x1B[38;5;117m",
+  // Soft cyan - for model
+  pastelPink: "\x1B[38;5;218m",
+  // Soft pink - for git branch
+  pastelGreen: "\x1B[38;5;151m",
+  // Mint green - for positive/safe status
+  pastelOrange: "\x1B[38;5;216m",
+  // Soft orange - for warning status
+  pastelRed: "\x1B[38;5;210m",
+  // Soft coral - for danger status
+  pastelGray: "\x1B[38;5;249m"
+  // Light gray - for secondary info
 };
 var RESET = COLORS.reset;
 function getColorForPercent(percent) {
   if (percent <= 50)
-    return COLORS.green;
+    return COLORS.pastelGreen;
   if (percent <= 80)
-    return COLORS.yellow;
-  return COLORS.red;
+    return COLORS.pastelYellow;
+  return COLORS.pastelRed;
 }
 function colorize(text, color) {
   return `${color}${text}${RESET}`;
@@ -413,17 +428,14 @@ var modelWidget = {
   name: "Model",
   async getData(ctx) {
     const { model } = ctx.stdin;
-    if (!model?.display_name) {
-      return null;
-    }
     return {
-      id: model.id,
-      displayName: model.display_name
+      id: model?.id || "",
+      displayName: model?.display_name || "-"
     };
   },
   render(data) {
     const shortName = shortenModelName(data.displayName);
-    return `${COLORS.cyan}\u{1F916} ${shortName}${RESET}`;
+    return `${COLORS.pastelCyan}\u{1F916} ${shortName}${RESET}`;
   }
 };
 
@@ -452,13 +464,19 @@ var contextWidget = {
   async getData(ctx) {
     const { context_window } = ctx.stdin;
     const usage = context_window?.current_usage;
+    const contextSize = context_window?.context_window_size || 2e5;
     if (!usage) {
-      return null;
+      return {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        contextSize,
+        percentage: 0
+      };
     }
     const inputTokens = usage.input_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
     const outputTokens = usage.output_tokens;
     const totalTokens = inputTokens + outputTokens;
-    const contextSize = context_window.context_window_size;
     const percentage = calculatePercent(inputTokens, contextSize);
     return {
       inputTokens,
@@ -487,15 +505,12 @@ var costWidget = {
   name: "Cost",
   async getData(ctx) {
     const { cost } = ctx.stdin;
-    if (cost?.total_cost_usd === void 0) {
-      return null;
-    }
     return {
-      totalCostUsd: cost.total_cost_usd
+      totalCostUsd: cost?.total_cost_usd ?? 0
     };
   },
   render(data) {
-    return colorize(formatCost(data.totalCostUsd), COLORS.yellow);
+    return colorize(formatCost(data.totalCostUsd), COLORS.pastelYellow);
   }
 };
 
@@ -589,6 +604,20 @@ function getGitBranch(cwd) {
     return void 0;
   }
 }
+function isGitDirty(cwd) {
+  try {
+    const result = execFileSync2("git", ["status", "--porcelain"], {
+      cwd,
+      encoding: "utf-8",
+      timeout: 1e3,
+      // 1s timeout
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    return result.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
 var projectInfoWidget = {
   id: "projectInfo",
   name: "Project Info",
@@ -598,7 +627,12 @@ var projectInfoWidget = {
       return null;
     }
     const dirName = basename(currentDir);
-    const gitBranch = getGitBranch(currentDir);
+    const branch = getGitBranch(currentDir);
+    let gitBranch;
+    if (branch) {
+      const dirty = isGitDirty(currentDir);
+      gitBranch = dirty ? `${branch}*` : branch;
+    }
     return {
       dirName,
       gitBranch
@@ -606,9 +640,9 @@ var projectInfoWidget = {
   },
   render(data) {
     const parts = [];
-    parts.push(colorize(`\u{1F4C1} ${data.dirName}`, COLORS.cyan));
+    parts.push(colorize(`\u{1F4C1} ${data.dirName}`, COLORS.pastelYellow));
     if (data.gitBranch) {
-      parts.push(colorize(`(${data.gitBranch})`, COLORS.magenta));
+      parts.push(colorize(`(${data.gitBranch})`, COLORS.pastelPink));
     }
     return parts.join(" ");
   }
@@ -976,11 +1010,11 @@ var todoProgressWidget = {
     const color = getColorForPercent(100 - percent);
     if (data.current) {
       const taskName = data.current.content.length > 15 ? data.current.content.slice(0, 15) + "..." : data.current.content;
-      return `${colorize("\u2713", COLORS.green)} ${taskName} [${data.completed}/${data.total}]`;
+      return `${colorize("\u2713", COLORS.pastelGreen)} ${taskName} [${data.completed}/${data.total}]`;
     }
     return colorize(
       `${t.widgets.todos}: ${data.completed}/${data.total}`,
-      data.completed === data.total ? COLORS.green : color
+      data.completed === data.total ? COLORS.pastelGreen : color
     );
   }
 };

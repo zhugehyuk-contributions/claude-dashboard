@@ -14,16 +14,12 @@ export const costWidget: Widget<CostData> = {
   async getData(ctx: WidgetContext): Promise<CostData | null> {
     const { cost } = ctx.stdin;
 
-    if (cost?.total_cost_usd === undefined) {
-      return null;
-    }
-
     return {
-      totalCostUsd: cost.total_cost_usd,
+      totalCostUsd: cost?.total_cost_usd ?? 0,
     };
   },
 
   render(data: CostData): string {
-    return colorize(formatCost(data.totalCostUsd), COLORS.yellow);
+    return colorize(formatCost(data.totalCostUsd), COLORS.pastelYellow);
   },
 };

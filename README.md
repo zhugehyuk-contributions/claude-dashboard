@@ -9,7 +9,7 @@ Comprehensive status line plugin for Claude Code with context usage, API rate li
 - 📈 **Token Count**: Current/total tokens in K/M format
 - 💰 **Cost Tracking**: Cumulative session cost in USD
 - ⏱️ **Rate Limits**: 5h session limit with reset countdown, 7d usage
-- 📁 **Project Info**: Directory name with git branch
+- 📁 **Project Info**: Directory name with git branch (* for uncommitted changes)
 - 🔧 **Config Counts**: CLAUDE.md, rules, MCPs, hooks counts
 - ⚙️ **Tool Activity**: Running/completed tools tracking
 - ⏱️ **Session Duration**: Session time tracking
@@ -17,6 +17,10 @@ Comprehensive status line plugin for Claude Code with context usage, API rate li
 - ✓ **Todo Progress**: Task completion rate
 - 🌐 **i18n**: English and Korean support (auto-detect)
 - 📐 **Multi-line**: Compact (1), Normal (2), Detailed (3) line modes
+
+### Coming Soon
+
+- 🎨 **Color Themes**: Choose from multiple color themes (pastel, classic, high-contrast)
 
 ## Output Examples
 
@@ -28,8 +32,9 @@ Comprehensive status line plugin for Claude Code with context usage, API rate li
 **Normal (2 lines):**
 ```
 🤖 Opus │ ████████░░ 80% │ 160K/200K │ $1.25 │ 5h: 42% (2h30m) │ 7d: 69% │ 7d-S: 2%
-📁 project (main) │ ⏱ 45m │ ✓ 3/5
+📁 project (main*) │ ⏱ 45m │ ✓ 3/5
 ```
+> `*` indicates uncommitted changes in git
 
 **Detailed (3 lines):**
 ```
@@ -107,7 +112,7 @@ Run `/claude-dashboard:setup` without arguments to use interactive mode:
 | `rateLimit5h` | 5-hour rate limit |
 | `rateLimit7d` | 7-day rate limit (Max only) |
 | `rateLimit7dSonnet` | 7-day Sonnet limit (Max only) |
-| `projectInfo` | Directory name + git branch |
+| `projectInfo` | Directory name + git branch (* if dirty) |
 | `configCounts` | CLAUDE.md, rules, MCPs, hooks |
 | `sessionDuration` | Session duration |
 | `toolActivity` | Running/completed tools |

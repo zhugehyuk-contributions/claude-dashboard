@@ -46,13 +46,13 @@ export const todoProgressWidget: Widget<TodoProgressData> = {
         data.current.content.length > 15
           ? data.current.content.slice(0, 15) + '...'
           : data.current.content;
-      return `${colorize('✓', COLORS.green)} ${taskName} [${data.completed}/${data.total}]`;
+      return `${colorize('✓', COLORS.pastelGreen)} ${taskName} [${data.completed}/${data.total}]`;
     }
 
     // All done or no current task
     return colorize(
       `${t.widgets.todos}: ${data.completed}/${data.total}`,
-      data.completed === data.total ? COLORS.green : color
+      data.completed === data.total ? COLORS.pastelGreen : color
     );
   },
 };

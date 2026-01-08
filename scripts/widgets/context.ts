@@ -15,9 +15,17 @@ export const contextWidget: Widget<ContextData> = {
   async getData(ctx: WidgetContext): Promise<ContextData | null> {
     const { context_window } = ctx.stdin;
     const usage = context_window?.current_usage;
+    const contextSize = context_window?.context_window_size || 200000;
 
     if (!usage) {
-      return null;
+      // Return default values when no usage data
+      return {
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        contextSize,
+        percentage: 0,
+      };
     }
 
     const inputTokens =
@@ -26,7 +34,6 @@ export const contextWidget: Widget<ContextData> = {
       usage.cache_read_input_tokens;
     const outputTokens = usage.output_tokens;
     const totalTokens = inputTokens + outputTokens;
-    const contextSize = context_window.context_window_size;
     const percentage = calculatePercent(inputTokens, contextSize);
 
     return {

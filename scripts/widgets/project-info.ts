@@ -26,6 +26,23 @@ function getGitBranch(cwd: string): string | undefined {
   }
 }
 
+/**
+ * Check if git working directory has uncommitted changes
+ */
+function isGitDirty(cwd: string): boolean {
+  try {
+    const result = execFileSync('git', ['status', '--porcelain'], {
+      cwd,
+      encoding: 'utf-8',
+      timeout: 1000, // 1s timeout
+      stdio: ['pipe', 'pipe', 'pipe'],
+    });
+    return result.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 export const projectInfoWidget: Widget<ProjectInfoData> = {
   id: 'projectInfo',
   name: 'Project Info',
@@ -37,7 +54,14 @@ export const projectInfoWidget: Widget<ProjectInfoData> = {
     }
 
     const dirName = basename(currentDir);
-    const gitBranch = getGitBranch(currentDir);
+    const branch = getGitBranch(currentDir);
+
+    // Add * suffix if there are uncommitted changes
+    let gitBranch: string | undefined;
+    if (branch) {
+      const dirty = isGitDirty(currentDir);
+      gitBranch = dirty ? `${branch}*` : branch;
+    }
 
     return {
       dirName,
@@ -48,12 +72,12 @@ export const projectInfoWidget: Widget<ProjectInfoData> = {
   render(data: ProjectInfoData): string {
     const parts: string[] = [];
 
-    // Directory name with folder icon
-    parts.push(colorize(`📁 ${data.dirName}`, COLORS.cyan));
+    // Directory name with folder icon (pastel yellow - soft cream color)
+    parts.push(colorize(`📁 ${data.dirName}`, COLORS.pastelYellow));
 
-    // Git branch in parentheses
+    // Git branch in parentheses (pastel pink)
     if (data.gitBranch) {
-      parts.push(colorize(`(${data.gitBranch})`, COLORS.magenta));
+      parts.push(colorize(`(${data.gitBranch})`, COLORS.pastelPink));
     }
 
     return parts.join(' ');
