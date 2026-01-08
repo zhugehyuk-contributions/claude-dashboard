@@ -24,18 +24,17 @@ export const todoProgressWidget: Widget<TodoProgressData> = {
     }
 
     const progress = extractTodoProgress(transcript);
-    if (!progress) {
-      return null;
-    }
 
-    return progress;
+    // Return default data if no TodoWrite calls yet
+    return progress || { total: 0, completed: 0, current: null };
   },
 
   render(data: TodoProgressData, ctx: WidgetContext): string {
     const { translations: t } = ctx;
 
+    // Show placeholder when no todos exist
     if (data.total === 0) {
-      return '';
+      return colorize(`${t.widgets.todos}: -`, COLORS.dim);
     }
 
     const percent = calculatePercent(data.completed, data.total);

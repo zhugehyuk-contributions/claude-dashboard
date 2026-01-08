@@ -233,11 +233,11 @@ describe('widgets', () => {
       expect(data).toBeNull();
     });
 
-    it('should render empty string when total is 0', () => {
+    it('should render placeholder when total is 0', () => {
       const ctx = createContext();
       const data = { completed: 0, total: 0 };
       const result = todoProgressWidget.render(data, ctx);
-      expect(result).toBe('');
+      expect(result).toContain('Todos: -');
     });
 
     it('should render current task with progress', () => {
