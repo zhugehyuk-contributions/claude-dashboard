@@ -21,15 +21,15 @@ export const cacheHitWidget: Widget<CacheHitData> = {
     // Don't show if no input tokens yet
     if (total === 0) return null;
 
-    const hitRate = Math.round((cacheRead / total) * 100);
+    const hitPercentage = Math.round((cacheRead / total) * 100);
 
-    return { hitRate };
+    return { hitPercentage };
   },
 
   render(data: CacheHitData): string {
     // Higher cache hit rate is better (green), lower is worse (yellow/red)
     // Invert the color logic: 100% = green, 0% = red
-    const color = getColorForPercent(100 - data.hitRate);
-    return `📦 ${colorize(`${data.hitRate}%`, color)}`;
+    const color = getColorForPercent(100 - data.hitPercentage);
+    return `📦 ${colorize(`${data.hitPercentage}%`, color)}`;
   },
 };

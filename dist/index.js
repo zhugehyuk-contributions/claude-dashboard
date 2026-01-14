@@ -1113,12 +1113,12 @@ var cacheHitWidget = {
     const total = cacheRead + freshInput;
     if (total === 0)
       return null;
-    const hitRate = Math.round(cacheRead / total * 100);
-    return { hitRate };
+    const hitPercentage = Math.round(cacheRead / total * 100);
+    return { hitPercentage };
   },
   render(data) {
-    const color = getColorForPercent(100 - data.hitRate);
-    return `\u{1F4E6} ${colorize(`${data.hitRate}%`, color)}`;
+    const color = getColorForPercent(100 - data.hitPercentage);
+    return `\u{1F4E6} ${colorize(`${data.hitPercentage}%`, color)}`;
   }
 };
 

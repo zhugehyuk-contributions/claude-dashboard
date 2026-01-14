@@ -485,12 +485,12 @@ describe('widgets', () => {
 
       expect(data).not.toBeNull();
       // cache_read(7000) / (cache_read(7000) + input(3000)) = 70%
-      expect(data?.hitRate).toBe(70);
+      expect(data?.hitPercentage).toBe(70);
     });
 
     it('should render cache hit percentage', () => {
       const ctx = createContext();
-      const data = { hitRate: 67 };
+      const data = { hitPercentage: 67 };
       const result = cacheHitWidget.render(data, ctx);
 
       expect(result).toContain('📦');

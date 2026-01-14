@@ -238,17 +238,34 @@ export interface TodoProgressData {
   total: number;
 }
 
+/**
+ * Burn rate data - tokens consumed per minute
+ * @invariant tokensPerMinute >= 0 (enforced in widget)
+ */
 export interface BurnRateData {
+  /** Tokens consumed per minute (session average). Always >= 0. */
   tokensPerMinute: number;
 }
 
+/**
+ * Depletion time data - estimated time until rate limit is reached
+ * @invariant minutesToLimit >= 0 (enforced in widget)
+ * @invariant Calculation assumes all current utilization is from this session (approximation)
+ */
 export interface DepletionTimeData {
+  /** Estimated minutes until rate limit is reached. Always >= 0. */
   minutesToLimit: number;
+  /** Which rate limit will be hit first */
   limitType: '5h' | '7d';
 }
 
+/**
+ * Cache hit rate data - percentage of tokens served from cache
+ * @invariant hitPercentage is in range [0, 100] (enforced in widget)
+ */
 export interface CacheHitData {
-  hitRate: number; // 0-100
+  /** Cache hit percentage (0-100). Higher is better (more cache reuse). */
+  hitPercentage: number;
 }
 
 /**
