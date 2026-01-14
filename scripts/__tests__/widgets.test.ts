@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { modelWidget } from '../widgets/model.js';
 import { contextWidget } from '../widgets/context.js';
 import { costWidget } from '../widgets/cost.js';
@@ -6,6 +6,9 @@ import { todoProgressWidget } from '../widgets/todo-progress.js';
 import { agentStatusWidget } from '../widgets/agent-status.js';
 import { toolActivityWidget } from '../widgets/tool-activity.js';
 import { projectInfoWidget } from '../widgets/project-info.js';
+import { burnRateWidget } from '../widgets/burn-rate.js';
+import { cacheHitWidget } from '../widgets/cache-hit.js';
+import { depletionTimeWidget } from '../widgets/depletion-time.js';
 import type { WidgetContext, StdinInput, Config, Translations } from '../types.js';
 
 // Mock translations
@@ -24,6 +27,9 @@ const mockTranslations: Translations = {
     rules: 'Rules',
     mcps: 'MCP',
     hooks: 'Hooks',
+    burnRate: 'Rate',
+    cache: 'Cache',
+    toLimit: 'to',
   },
 };
 
@@ -70,10 +76,10 @@ describe('widgets', () => {
       expect(modelWidget.name).toBe('Model');
     });
 
-    it('should return null when model data is missing', async () => {
+    it('should return default values when model data is missing', async () => {
       const ctx = createContext({ model: undefined as any });
       const data = await modelWidget.getData(ctx);
-      expect(data).toBeNull();
+      expect(data).toEqual({ id: '', displayName: '-' });
     });
 
     it('should extract model data', async () => {
@@ -109,7 +115,7 @@ describe('widgets', () => {
       expect(contextWidget.name).toBe('Context');
     });
 
-    it('should return null when usage is missing', async () => {
+    it('should return default values when usage is missing', async () => {
       const ctx = createContext({
         context_window: {
           total_input_tokens: 0,
@@ -119,7 +125,13 @@ describe('widgets', () => {
         },
       });
       const data = await contextWidget.getData(ctx);
-      expect(data).toBeNull();
+      expect(data).toEqual({
+        inputTokens: 0,
+        outputTokens: 0,
+        totalTokens: 0,
+        contextSize: 200000,
+        percentage: 0,
+      });
     });
 
     it('should calculate context data correctly', async () => {
@@ -158,10 +170,10 @@ describe('widgets', () => {
       expect(costWidget.name).toBe('Cost');
     });
 
-    it('should return null when cost is missing', async () => {
+    it('should return default values when cost is missing', async () => {
       const ctx = createContext({ cost: undefined as any });
       const data = await costWidget.getData(ctx);
-      expect(data).toBeNull();
+      expect(data).toEqual({ totalCostUsd: 0 });
     });
 
     it('should extract cost data', async () => {
@@ -377,6 +389,155 @@ describe('widgets', () => {
       expect(result).toContain('Tools');
       expect(result).toContain('15');
       expect(result).toContain('done');
+    });
+  });
+
+  describe('burnRateWidget', () => {
+    it('should have correct id and name', () => {
+      expect(burnRateWidget.id).toBe('burnRate');
+      expect(burnRateWidget.name).toBe('Burn Rate');
+    });
+
+    it('should return null when usage is missing', async () => {
+      const ctx = createContext({
+        context_window: {
+          total_input_tokens: 0,
+          total_output_tokens: 0,
+          context_window_size: 200000,
+          current_usage: null,
+        },
+      });
+      const data = await burnRateWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should render burn rate with tokens per minute', () => {
+      const ctx = createContext();
+      const data = { tokensPerMinute: 5500 };
+      const result = burnRateWidget.render(data, ctx);
+
+      expect(result).toContain('🔥');
+      expect(result).toContain('5.5K');
+      expect(result).toContain('/min');
+    });
+
+    it('should format large burn rates correctly', () => {
+      const ctx = createContext();
+      const data = { tokensPerMinute: 1500000 };
+      const result = burnRateWidget.render(data, ctx);
+
+      expect(result).toContain('1.5M');
+    });
+  });
+
+  describe('cacheHitWidget', () => {
+    it('should have correct id and name', () => {
+      expect(cacheHitWidget.id).toBe('cacheHit');
+      expect(cacheHitWidget.name).toBe('Cache Hit Rate');
+    });
+
+    it('should return null when usage is missing', async () => {
+      const ctx = createContext({
+        context_window: {
+          total_input_tokens: 0,
+          total_output_tokens: 0,
+          context_window_size: 200000,
+          current_usage: null,
+        },
+      });
+      const data = await cacheHitWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should return null when no input tokens', async () => {
+      const ctx = createContext({
+        context_window: {
+          total_input_tokens: 0,
+          total_output_tokens: 0,
+          context_window_size: 200000,
+          current_usage: {
+            input_tokens: 0,
+            output_tokens: 0,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 0,
+          },
+        },
+      });
+      const data = await cacheHitWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should calculate cache hit rate correctly', async () => {
+      const ctx = createContext({
+        context_window: {
+          total_input_tokens: 10000,
+          total_output_tokens: 5000,
+          context_window_size: 200000,
+          current_usage: {
+            input_tokens: 3000,
+            output_tokens: 5000,
+            cache_creation_input_tokens: 0,
+            cache_read_input_tokens: 7000,
+          },
+        },
+      });
+      const data = await cacheHitWidget.getData(ctx);
+
+      expect(data).not.toBeNull();
+      // cache_read(7000) / (cache_read(7000) + input(3000)) = 70%
+      expect(data?.hitRate).toBe(70);
+    });
+
+    it('should render cache hit percentage', () => {
+      const ctx = createContext();
+      const data = { hitRate: 67 };
+      const result = cacheHitWidget.render(data, ctx);
+
+      expect(result).toContain('📦');
+      expect(result).toContain('67%');
+    });
+  });
+
+  describe('depletionTimeWidget', () => {
+    it('should have correct id and name', () => {
+      expect(depletionTimeWidget.id).toBe('depletionTime');
+      expect(depletionTimeWidget.name).toBe('Depletion Time');
+    });
+
+    it('should return null when rate limits are missing', async () => {
+      const ctx = createContext();
+      ctx.rateLimits = null;
+      const data = await depletionTimeWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should return null when utilization is 0', async () => {
+      const ctx = createContext();
+      ctx.rateLimits = {
+        five_hour: { utilization: 0, resets_at: null },
+        seven_day: null,
+        seven_day_sonnet: null,
+      };
+      const data = await depletionTimeWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should render depletion time estimate', () => {
+      const ctx = createContext();
+      const data = { minutesToLimit: 120, limitType: '5h' as const };
+      const result = depletionTimeWidget.render(data, ctx);
+
+      expect(result).toContain('⏳');
+      expect(result).toContain('2h');
+      expect(result).toContain('5h');
+    });
+
+    it('should format short depletion times', () => {
+      const ctx = createContext();
+      const data = { minutesToLimit: 45, limitType: '5h' as const };
+      const result = depletionTimeWidget.render(data, ctx);
+
+      expect(result).toContain('45m');
     });
   });
 });

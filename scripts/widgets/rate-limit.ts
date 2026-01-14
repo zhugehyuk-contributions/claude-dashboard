@@ -75,7 +75,15 @@ export const rateLimit7dWidget: Widget<RateLimitData> = {
   render(data: RateLimitData, ctx: WidgetContext): string {
     const { translations: t } = ctx;
     const color = getColorForPercent(data.utilization);
-    return `${t.labels['7d_all']}: ${colorize(`${data.utilization}%`, color)}`;
+    let text = `${t.labels['7d_all']}: ${colorize(`${data.utilization}%`, color)}`;
+
+    // Add reset time if available
+    if (data.resetsAt) {
+      const remaining = formatTimeRemaining(data.resetsAt, t);
+      text += ` (${remaining})`;
+    }
+
+    return text;
   },
 };
 
@@ -106,6 +114,14 @@ export const rateLimit7dSonnetWidget: Widget<RateLimitData> = {
   render(data: RateLimitData, ctx: WidgetContext): string {
     const { translations: t } = ctx;
     const color = getColorForPercent(data.utilization);
-    return `${t.labels['7d_sonnet']}: ${colorize(`${data.utilization}%`, color)}`;
+    let text = `${t.labels['7d_sonnet']}: ${colorize(`${data.utilization}%`, color)}`;
+
+    // Add reset time if available
+    if (data.resetsAt) {
+      const remaining = formatTimeRemaining(data.resetsAt, t);
+      text += ` (${remaining})`;
+    }
+
+    return text;
   },
 };

@@ -27,6 +27,9 @@
     "claudeMd": "CLAUDE.md",
     "rules": "규칙",
     "mcps": "MCP",
-    "hooks": "훅"
+    "hooks": "훅",
+    "burnRate": "소모율",
+    "cache": "캐시",
+    "toLimit": "후"
   }
 }

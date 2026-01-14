@@ -44,7 +44,10 @@ export type WidgetId =
   | 'sessionDuration'
   | 'toolActivity'
   | 'agentStatus'
-  | 'todoProgress';
+  | 'todoProgress'
+  | 'burnRate'
+  | 'depletionTime'
+  | 'cacheHit';
 
 /**
  * Display mode for status line output
@@ -64,12 +67,12 @@ export const DISPLAY_PRESETS: Record<Exclude<DisplayMode, 'custom'>, WidgetId[][
   ],
   normal: [
     ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
-    ['projectInfo', 'sessionDuration', 'todoProgress'],
+    ['projectInfo', 'sessionDuration', 'burnRate', 'todoProgress'],
   ],
   detailed: [
     ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
-    ['projectInfo', 'sessionDuration', 'todoProgress'],
-    ['configCounts', 'toolActivity', 'agentStatus'],
+    ['projectInfo', 'sessionDuration', 'burnRate', 'depletionTime', 'todoProgress'],
+    ['configCounts', 'toolActivity', 'agentStatus', 'cacheHit'],
   ],
 };
 
@@ -134,6 +137,9 @@ export interface Translations {
     rules: string;
     mcps: string;
     hooks: string;
+    burnRate: string;
+    cache: string;
+    toLimit: string;
   };
 }
 
@@ -232,6 +238,19 @@ export interface TodoProgressData {
   total: number;
 }
 
+export interface BurnRateData {
+  tokensPerMinute: number;
+}
+
+export interface DepletionTimeData {
+  minutesToLimit: number;
+  limitType: '5h' | '7d';
+}
+
+export interface CacheHitData {
+  hitRate: number; // 0-100
+}
+
 /**
  * Union type of all widget data
  */
@@ -245,7 +264,10 @@ export type WidgetData =
   | SessionDurationData
   | ToolActivityData
   | AgentStatusData
-  | TodoProgressData;
+  | TodoProgressData
+  | BurnRateData
+  | DepletionTimeData
+  | CacheHitData;
 
 /**
  * Transcript entry from JSONL file

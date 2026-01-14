@@ -23,6 +23,9 @@ import { sessionDurationWidget } from './session-duration.js';
 import { toolActivityWidget } from './tool-activity.js';
 import { agentStatusWidget } from './agent-status.js';
 import { todoProgressWidget } from './todo-progress.js';
+import { burnRateWidget } from './burn-rate.js';
+import { depletionTimeWidget } from './depletion-time.js';
+import { cacheHitWidget } from './cache-hit.js';
 
 /**
  * Widget registry - maps widget IDs to widget implementations
@@ -40,6 +43,9 @@ const widgetRegistry = new Map<WidgetId, Widget>([
   ['toolActivity', toolActivityWidget],
   ['agentStatus', agentStatusWidget],
   ['todoProgress', todoProgressWidget],
+  ['burnRate', burnRateWidget],
+  ['depletionTime', depletionTimeWidget],
+  ['cacheHit', cacheHitWidget],
 ] as [WidgetId, Widget][]);
 
 /**
@@ -71,12 +77,12 @@ export function getLines(config: Config): WidgetId[][] {
     ] as WidgetId[][],
     normal: [
       ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
-      ['projectInfo', 'sessionDuration', 'todoProgress'],
+      ['projectInfo', 'sessionDuration', 'burnRate', 'todoProgress'],
     ] as WidgetId[][],
     detailed: [
       ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
-      ['projectInfo', 'sessionDuration', 'todoProgress'],
-      ['configCounts', 'toolActivity', 'agentStatus'],
+      ['projectInfo', 'sessionDuration', 'burnRate', 'depletionTime', 'todoProgress'],
+      ['configCounts', 'toolActivity', 'agentStatus', 'cacheHit'],
     ] as WidgetId[][],
   };
 

@@ -27,6 +27,9 @@
     "claudeMd": "CLAUDE.md",
     "rules": "Rules",
     "mcps": "MCP",
-    "hooks": "Hooks"
+    "hooks": "Hooks",
+    "burnRate": "Rate",
+    "cache": "Cache",
+    "toLimit": "to"
   }
 }

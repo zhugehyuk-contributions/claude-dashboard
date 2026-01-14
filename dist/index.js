@@ -299,7 +299,10 @@ var en_default = {
     claudeMd: "CLAUDE.md",
     rules: "Rules",
     mcps: "MCP",
-    hooks: "Hooks"
+    hooks: "Hooks",
+    burnRate: "Rate",
+    cache: "Cache",
+    toLimit: "to"
   }
 };
 
@@ -333,7 +336,10 @@ var ko_default = {
     claudeMd: "CLAUDE.md",
     rules: "\uADDC\uCE59",
     mcps: "MCP",
-    hooks: "\uD6C5"
+    hooks: "\uD6C5",
+    burnRate: "\uC18C\uBAA8\uC728",
+    cache: "\uCE90\uC2DC",
+    toLimit: "\uD6C4"
   }
 };
 
@@ -561,7 +567,12 @@ var rateLimit7dWidget = {
   render(data, ctx) {
     const { translations: t } = ctx;
     const color = getColorForPercent(data.utilization);
-    return `${t.labels["7d_all"]}: ${colorize(`${data.utilization}%`, color)}`;
+    let text = `${t.labels["7d_all"]}: ${colorize(`${data.utilization}%`, color)}`;
+    if (data.resetsAt) {
+      const remaining = formatTimeRemaining(data.resetsAt, t);
+      text += ` (${remaining})`;
+    }
+    return text;
   }
 };
 var rateLimit7dSonnetWidget = {
@@ -583,7 +594,12 @@ var rateLimit7dSonnetWidget = {
   render(data, ctx) {
     const { translations: t } = ctx;
     const color = getColorForPercent(data.utilization);
-    return `${t.labels["7d_sonnet"]}: ${colorize(`${data.utilization}%`, color)}`;
+    let text = `${t.labels["7d_sonnet"]}: ${colorize(`${data.utilization}%`, color)}`;
+    if (data.resetsAt) {
+      const remaining = formatTimeRemaining(data.resetsAt, t);
+      text += ` (${remaining})`;
+    }
+    return text;
   }
 };
 
@@ -741,7 +757,7 @@ var configCountsWidget = {
   }
 };
 
-// scripts/widgets/session-duration.ts
+// scripts/utils/session.ts
 import { readFile as readFile3, writeFile as writeFile2, mkdir as mkdir2 } from "fs/promises";
 import { join as join3 } from "path";
 import { homedir as homedir2 } from "os";
@@ -762,13 +778,18 @@ async function getSessionStartTime(sessionId) {
     return startTime;
   }
 }
+async function getSessionElapsedMs(sessionId) {
+  const startTime = await getSessionStartTime(sessionId);
+  return Date.now() - startTime;
+}
+
+// scripts/widgets/session-duration.ts
 var sessionDurationWidget = {
   id: "sessionDuration",
   name: "Session Duration",
   async getData(ctx) {
     const sessionId = ctx.stdin.session_id || "default";
-    const startTime = await getSessionStartTime(sessionId);
-    const elapsedMs = Date.now() - startTime;
+    const elapsedMs = await getSessionElapsedMs(sessionId);
     return { elapsedMs };
   },
   render(data, ctx) {
@@ -1019,6 +1040,85 @@ var todoProgressWidget = {
   }
 };
 
+// scripts/widgets/burn-rate.ts
+var burnRateWidget = {
+  id: "burnRate",
+  name: "Burn Rate",
+  async getData(ctx) {
+    const usage = ctx.stdin.context_window?.current_usage;
+    if (!usage)
+      return null;
+    const totalTokens = usage.input_tokens + usage.output_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
+    const sessionId = ctx.stdin.session_id || "default";
+    const elapsedMs = await getSessionElapsedMs(sessionId);
+    const elapsedMinutes = elapsedMs / (1e3 * 60);
+    if (elapsedMinutes < 1)
+      return null;
+    const tokensPerMinute = totalTokens / elapsedMinutes;
+    return { tokensPerMinute };
+  },
+  render(data) {
+    return `\u{1F525} ${formatTokens(Math.round(data.tokensPerMinute))}/min`;
+  }
+};
+
+// scripts/widgets/depletion-time.ts
+var depletionTimeWidget = {
+  id: "depletionTime",
+  name: "Depletion Time",
+  async getData(ctx) {
+    const limits = ctx.rateLimits;
+    if (!limits?.five_hour)
+      return null;
+    const utilization = limits.five_hour.utilization;
+    if (utilization < 1)
+      return null;
+    const sessionId = ctx.stdin.session_id || "default";
+    const elapsedMs = await getSessionElapsedMs(sessionId);
+    const elapsedMinutes = elapsedMs / (1e3 * 60);
+    if (elapsedMinutes < 1)
+      return null;
+    const utilizationPerMinute = utilization / elapsedMinutes;
+    if (utilizationPerMinute < 0.01)
+      return null;
+    const remainingUtilization = 100 - utilization;
+    const minutesToLimit = remainingUtilization / utilizationPerMinute;
+    if (minutesToLimit > 24 * 60)
+      return null;
+    return {
+      minutesToLimit: Math.round(minutesToLimit),
+      limitType: "5h"
+    };
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    const duration = formatDuration(data.minutesToLimit * 60 * 1e3, t.time);
+    return colorize(`\u23F3 ~${duration} to ${data.limitType}`, COLORS.yellow);
+  }
+};
+
+// scripts/widgets/cache-hit.ts
+var cacheHitWidget = {
+  id: "cacheHit",
+  name: "Cache Hit Rate",
+  async getData(ctx) {
+    const usage = ctx.stdin.context_window?.current_usage;
+    if (!usage)
+      return null;
+    const cacheRead = usage.cache_read_input_tokens;
+    const freshInput = usage.input_tokens;
+    const total = cacheRead + freshInput;
+    if (total === 0)
+      return null;
+    const hitRate = Math.round(cacheRead / total * 100);
+    return { hitRate };
+  },
+  render(data) {
+    const color = getColorForPercent(100 - data.hitRate);
+    return `\u{1F4E6} ${colorize(`${data.hitRate}%`, color)}`;
+  }
+};
+
 // scripts/widgets/index.ts
 var widgetRegistry = /* @__PURE__ */ new Map([
   ["model", modelWidget],
@@ -1032,7 +1132,10 @@ var widgetRegistry = /* @__PURE__ */ new Map([
   ["sessionDuration", sessionDurationWidget],
   ["toolActivity", toolActivityWidget],
   ["agentStatus", agentStatusWidget],
-  ["todoProgress", todoProgressWidget]
+  ["todoProgress", todoProgressWidget],
+  ["burnRate", burnRateWidget],
+  ["depletionTime", depletionTimeWidget],
+  ["cacheHit", cacheHitWidget]
 ]);
 function getWidget(id) {
   return widgetRegistry.get(id);
@@ -1047,12 +1150,12 @@ function getLines(config) {
     ],
     normal: [
       ["model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"],
-      ["projectInfo", "sessionDuration", "todoProgress"]
+      ["projectInfo", "sessionDuration", "burnRate", "todoProgress"]
     ],
     detailed: [
       ["model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"],
-      ["projectInfo", "sessionDuration", "todoProgress"],
-      ["configCounts", "toolActivity", "agentStatus"]
+      ["projectInfo", "sessionDuration", "burnRate", "depletionTime", "todoProgress"],
+      ["configCounts", "toolActivity", "agentStatus", "cacheHit"]
     ]
   };
   return presets[config.displayMode] || presets.compact;
