@@ -521,85 +521,59 @@ var costWidget = {
 };
 
 // scripts/widgets/rate-limit.ts
+function renderRateLimit(data, ctx, labelKey) {
+  if (data.isError) {
+    return colorize("\u26A0\uFE0F", COLORS.yellow);
+  }
+  const { translations: t } = ctx;
+  const color = getColorForPercent(data.utilization);
+  const label = `${t.labels[labelKey]}: ${colorize(`${data.utilization}%`, color)}`;
+  if (!data.resetsAt)
+    return label;
+  return `${label} (${formatTimeRemaining(data.resetsAt, t)})`;
+}
+function getLimitData(limits, key) {
+  const limit = limits?.[key];
+  if (!limit)
+    return null;
+  return {
+    utilization: Math.round(limit.utilization),
+    resetsAt: limit.resets_at
+  };
+}
 var rateLimit5hWidget = {
   id: "rateLimit5h",
   name: "5h Rate Limit",
   async getData(ctx) {
-    const limits = ctx.rateLimits;
-    if (!limits || !limits.five_hour) {
-      return { utilization: 0, resetsAt: null, isError: true };
-    }
-    return {
-      utilization: Math.round(limits.five_hour.utilization),
-      resetsAt: limits.five_hour.resets_at
-    };
+    const data = getLimitData(ctx.rateLimits, "five_hour");
+    return data ?? { utilization: 0, resetsAt: null, isError: true };
   },
   render(data, ctx) {
-    if (data.isError) {
-      return colorize("\u26A0\uFE0F", COLORS.yellow);
-    }
-    const { translations: t } = ctx;
-    const color = getColorForPercent(data.utilization);
-    let text = `${t.labels["5h"]}: ${colorize(`${data.utilization}%`, color)}`;
-    if (data.resetsAt) {
-      const remaining = formatTimeRemaining(data.resetsAt, t);
-      text += ` (${remaining})`;
-    }
-    return text;
+    return renderRateLimit(data, ctx, "5h");
   }
 };
 var rateLimit7dWidget = {
   id: "rateLimit7d",
   name: "7d Rate Limit",
   async getData(ctx) {
-    if (ctx.config.plan !== "max") {
+    if (ctx.config.plan !== "max")
       return null;
-    }
-    const limits = ctx.rateLimits;
-    if (!limits?.seven_day) {
-      return null;
-    }
-    return {
-      utilization: Math.round(limits.seven_day.utilization),
-      resetsAt: limits.seven_day.resets_at
-    };
+    return getLimitData(ctx.rateLimits, "seven_day");
   },
   render(data, ctx) {
-    const { translations: t } = ctx;
-    const color = getColorForPercent(data.utilization);
-    let text = `${t.labels["7d_all"]}: ${colorize(`${data.utilization}%`, color)}`;
-    if (data.resetsAt) {
-      const remaining = formatTimeRemaining(data.resetsAt, t);
-      text += ` (${remaining})`;
-    }
-    return text;
+    return renderRateLimit(data, ctx, "7d_all");
   }
 };
 var rateLimit7dSonnetWidget = {
   id: "rateLimit7dSonnet",
   name: "7d Sonnet Rate Limit",
   async getData(ctx) {
-    if (ctx.config.plan !== "max") {
+    if (ctx.config.plan !== "max")
       return null;
-    }
-    const limits = ctx.rateLimits;
-    if (!limits?.seven_day_sonnet) {
-      return null;
-    }
-    return {
-      utilization: Math.round(limits.seven_day_sonnet.utilization),
-      resetsAt: limits.seven_day_sonnet.resets_at
-    };
+    return getLimitData(ctx.rateLimits, "seven_day_sonnet");
   },
   render(data, ctx) {
-    const { translations: t } = ctx;
-    const color = getColorForPercent(data.utilization);
-    let text = `${t.labels["7d_sonnet"]}: ${colorize(`${data.utilization}%`, color)}`;
-    if (data.resetsAt) {
-      const remaining = formatTimeRemaining(data.resetsAt, t);
-      text += ` (${remaining})`;
-    }
-    return text;
+    return renderRateLimit(data, ctx, "7d_sonnet");
   }
 };
 
@@ -764,23 +738,29 @@ import { homedir as homedir2 } from "os";
 var SESSION_DIR = join3(homedir2(), ".cache", "claude-dashboard", "sessions");
 async function getSessionStartTime(sessionId) {
   const sessionFile = join3(SESSION_DIR, `${sessionId}.json`);
-  try {
-    const content = await readFile3(sessionFile, "utf-8");
+  const content = await readFile3(sessionFile, "utf-8").catch(() => null);
+  if (content) {
     const data = JSON.parse(content);
     return data.startTime;
-  } catch {
-    const startTime = Date.now();
-    try {
-      await mkdir2(SESSION_DIR, { recursive: true });
-      await writeFile2(sessionFile, JSON.stringify({ startTime }), "utf-8");
-    } catch {
-    }
-    return startTime;
   }
+  const startTime = Date.now();
+  await mkdir2(SESSION_DIR, { recursive: true }).catch(() => {
+  });
+  await writeFile2(sessionFile, JSON.stringify({ startTime }), "utf-8").catch(() => {
+  });
+  return startTime;
 }
 async function getSessionElapsedMs(sessionId) {
   const startTime = await getSessionStartTime(sessionId);
   return Date.now() - startTime;
+}
+async function getSessionElapsedMinutes(ctx, minMinutes = 1) {
+  const sessionId = ctx.stdin.session_id || "default";
+  const elapsedMs = await getSessionElapsedMs(sessionId);
+  const elapsedMinutes = elapsedMs / (1e3 * 60);
+  if (elapsedMinutes < minMinutes)
+    return null;
+  return elapsedMinutes;
 }
 
 // scripts/widgets/session-duration.ts
@@ -1048,12 +1028,10 @@ var burnRateWidget = {
     const usage = ctx.stdin.context_window?.current_usage;
     if (!usage)
       return null;
-    const totalTokens = usage.input_tokens + usage.output_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
-    const sessionId = ctx.stdin.session_id || "default";
-    const elapsedMs = await getSessionElapsedMs(sessionId);
-    const elapsedMinutes = elapsedMs / (1e3 * 60);
-    if (elapsedMinutes < 1)
+    const elapsedMinutes = await getSessionElapsedMinutes(ctx);
+    if (!elapsedMinutes)
       return null;
+    const totalTokens = usage.input_tokens + usage.output_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
     const tokensPerMinute = totalTokens / elapsedMinutes;
     return { tokensPerMinute };
   },
@@ -1063,27 +1041,23 @@ var burnRateWidget = {
 };
 
 // scripts/widgets/depletion-time.ts
+var MAX_DISPLAY_MINUTES = 24 * 60;
+var MIN_UTILIZATION_RATE = 0.01;
 var depletionTimeWidget = {
   id: "depletionTime",
   name: "Depletion Time",
   async getData(ctx) {
-    const limits = ctx.rateLimits;
-    if (!limits?.five_hour)
+    const utilization = ctx.rateLimits?.five_hour?.utilization;
+    if (!utilization || utilization < 1)
       return null;
-    const utilization = limits.five_hour.utilization;
-    if (utilization < 1)
-      return null;
-    const sessionId = ctx.stdin.session_id || "default";
-    const elapsedMs = await getSessionElapsedMs(sessionId);
-    const elapsedMinutes = elapsedMs / (1e3 * 60);
-    if (elapsedMinutes < 1)
+    const elapsedMinutes = await getSessionElapsedMinutes(ctx);
+    if (!elapsedMinutes)
       return null;
     const utilizationPerMinute = utilization / elapsedMinutes;
-    if (utilizationPerMinute < 0.01)
+    if (utilizationPerMinute < MIN_UTILIZATION_RATE)
       return null;
-    const remainingUtilization = 100 - utilization;
-    const minutesToLimit = remainingUtilization / utilizationPerMinute;
-    if (minutesToLimit > 24 * 60)
+    const minutesToLimit = (100 - utilization) / utilizationPerMinute;
+    if (minutesToLimit > MAX_DISPLAY_MINUTES)
       return null;
     return {
       minutesToLimit: Math.round(minutesToLimit),
@@ -1091,8 +1065,7 @@ var depletionTimeWidget = {
     };
   },
   render(data, ctx) {
-    const { translations: t } = ctx;
-    const duration = formatDuration(data.minutesToLimit * 60 * 1e3, t.time);
+    const duration = formatDuration(data.minutesToLimit * 60 * 1e3, ctx.translations.time);
     return colorize(`\u23F3 ~${duration} to ${data.limitType}`, COLORS.yellow);
   }
 };

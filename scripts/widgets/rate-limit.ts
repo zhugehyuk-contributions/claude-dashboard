@@ -3,9 +3,35 @@
  */
 
 import type { Widget } from './base.js';
-import type { WidgetContext, RateLimitData } from '../types.js';
+import type { WidgetContext, RateLimitData, WidgetId, UsageLimits } from '../types.js';
 import { COLORS, getColorForPercent, colorize } from '../utils/colors.js';
 import { formatTimeRemaining } from '../utils/formatters.js';
+
+type LabelKey = '5h' | '7d_all' | '7d_sonnet';
+type LimitKey = keyof UsageLimits;
+
+function renderRateLimit(data: RateLimitData, ctx: WidgetContext, labelKey: LabelKey): string {
+  if (data.isError) {
+    return colorize('⚠️', COLORS.yellow);
+  }
+
+  const { translations: t } = ctx;
+  const color = getColorForPercent(data.utilization);
+  const label = `${t.labels[labelKey]}: ${colorize(`${data.utilization}%`, color)}`;
+
+  if (!data.resetsAt) return label;
+  return `${label} (${formatTimeRemaining(data.resetsAt, t)})`;
+}
+
+function getLimitData(limits: UsageLimits | null | undefined, key: LimitKey): RateLimitData | null {
+  const limit = limits?.[key];
+  if (!limit) return null;
+
+  return {
+    utilization: Math.round(limit.utilization),
+    resetsAt: limit.resets_at,
+  };
+}
 
 /**
  * 5-hour rate limit widget
@@ -15,36 +41,13 @@ export const rateLimit5hWidget: Widget<RateLimitData> = {
   name: '5h Rate Limit',
 
   async getData(ctx: WidgetContext): Promise<RateLimitData | null> {
-    const limits = ctx.rateLimits;
-
-    // API failed or no data - show warning (only in this widget to avoid duplicate warnings)
-    if (!limits || !limits.five_hour) {
-      return { utilization: 0, resetsAt: null, isError: true };
-    }
-
-    return {
-      utilization: Math.round(limits.five_hour.utilization),
-      resetsAt: limits.five_hour.resets_at,
-    };
+    const data = getLimitData(ctx.rateLimits, 'five_hour');
+    // Show warning if API failed (only in this widget to avoid duplicates)
+    return data ?? { utilization: 0, resetsAt: null, isError: true };
   },
 
   render(data: RateLimitData, ctx: WidgetContext): string {
-    // Show warning icon if API failed
-    if (data.isError) {
-      return colorize('⚠️', COLORS.yellow);
-    }
-
-    const { translations: t } = ctx;
-    const color = getColorForPercent(data.utilization);
-    let text = `${t.labels['5h']}: ${colorize(`${data.utilization}%`, color)}`;
-
-    // Add reset time if available
-    if (data.resetsAt) {
-      const remaining = formatTimeRemaining(data.resetsAt, t);
-      text += ` (${remaining})`;
-    }
-
-    return text;
+    return renderRateLimit(data, ctx, '5h');
   },
 };
 
@@ -56,34 +59,12 @@ export const rateLimit7dWidget: Widget<RateLimitData> = {
   name: '7d Rate Limit',
 
   async getData(ctx: WidgetContext): Promise<RateLimitData | null> {
-    // Only show for Max plan
-    if (ctx.config.plan !== 'max') {
-      return null;
-    }
-
-    const limits = ctx.rateLimits;
-    if (!limits?.seven_day) {
-      return null;
-    }
-
-    return {
-      utilization: Math.round(limits.seven_day.utilization),
-      resetsAt: limits.seven_day.resets_at,
-    };
+    if (ctx.config.plan !== 'max') return null;
+    return getLimitData(ctx.rateLimits, 'seven_day');
   },
 
   render(data: RateLimitData, ctx: WidgetContext): string {
-    const { translations: t } = ctx;
-    const color = getColorForPercent(data.utilization);
-    let text = `${t.labels['7d_all']}: ${colorize(`${data.utilization}%`, color)}`;
-
-    // Add reset time if available
-    if (data.resetsAt) {
-      const remaining = formatTimeRemaining(data.resetsAt, t);
-      text += ` (${remaining})`;
-    }
-
-    return text;
+    return renderRateLimit(data, ctx, '7d_all');
   },
 };
 
@@ -95,33 +76,11 @@ export const rateLimit7dSonnetWidget: Widget<RateLimitData> = {
   name: '7d Sonnet Rate Limit',
 
   async getData(ctx: WidgetContext): Promise<RateLimitData | null> {
-    // Only show for Max plan
-    if (ctx.config.plan !== 'max') {
-      return null;
-    }
-
-    const limits = ctx.rateLimits;
-    if (!limits?.seven_day_sonnet) {
-      return null;
-    }
-
-    return {
-      utilization: Math.round(limits.seven_day_sonnet.utilization),
-      resetsAt: limits.seven_day_sonnet.resets_at,
-    };
+    if (ctx.config.plan !== 'max') return null;
+    return getLimitData(ctx.rateLimits, 'seven_day_sonnet');
   },
 
   render(data: RateLimitData, ctx: WidgetContext): string {
-    const { translations: t } = ctx;
-    const color = getColorForPercent(data.utilization);
-    let text = `${t.labels['7d_sonnet']}: ${colorize(`${data.utilization}%`, color)}`;
-
-    // Add reset time if available
-    if (data.resetsAt) {
-      const remaining = formatTimeRemaining(data.resetsAt, t);
-      text += ` (${remaining})`;
-    }
-
-    return text;
+    return renderRateLimit(data, ctx, '7d_sonnet');
   },
 };

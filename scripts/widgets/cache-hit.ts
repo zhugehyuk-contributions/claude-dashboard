@@ -4,7 +4,7 @@
 
 import type { Widget } from './base.js';
 import type { WidgetContext, CacheHitData } from '../types.js';
-import { COLORS, getColorForPercent, colorize } from '../utils/colors.js';
+import { getColorForPercent, colorize } from '../utils/colors.js';
 
 export const cacheHitWidget: Widget<CacheHitData> = {
   id: 'cacheHit',
