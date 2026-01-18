@@ -26,7 +26,7 @@ export function formatCost(cost: number): string {
 
 /**
  * Format time remaining until reset
- * Examples: 2h30m, 45m, 5m
+ * Examples: 3d2h, 2h30m, 45m, 5m
  */
 export function formatTimeRemaining(resetAt: string | Date, t: Translations): string {
   const reset = typeof resetAt === 'string' ? new Date(resetAt) : resetAt;
@@ -36,9 +36,14 @@ export function formatTimeRemaining(resetAt: string | Date, t: Translations): st
   if (diffMs <= 0) return `0${t.time.minutes}`;
 
   const totalMinutes = Math.floor(diffMs / (1000 * 60));
-  const hours = Math.floor(totalMinutes / 60);
+  const totalHours = Math.floor(totalMinutes / 60);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
   const minutes = totalMinutes % 60;
 
+  if (days > 0) {
+    return `${days}${t.time.days}${hours}${t.time.hours}`;
+  }
   if (hours > 0) {
     return `${hours}${t.time.hours}${minutes}${t.time.minutes}`;
   }

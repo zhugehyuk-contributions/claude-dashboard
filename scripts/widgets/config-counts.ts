@@ -10,6 +10,21 @@ import type { WidgetContext, ConfigCountsData } from '../types.js';
 import { COLORS, colorize } from '../utils/colors.js';
 
 /**
+ * Cache TTL for config counts (30 seconds)
+ * Config files rarely change during active development
+ */
+const CONFIG_CACHE_TTL_MS = 30_000;
+
+/**
+ * Cached config counts keyed by project directory
+ */
+let configCountsCache: {
+  projectDir: string;
+  data: ConfigCountsData | null;
+  timestamp: number;
+} | null = null;
+
+/**
  * Check if a path exists
  */
 async function pathExists(path: string): Promise<boolean> {
@@ -96,6 +111,14 @@ export const configCountsWidget: Widget<ConfigCountsData> = {
       return null;
     }
 
+    // Check TTL-based cache
+    if (
+      configCountsCache?.projectDir === currentDir &&
+      Date.now() - configCountsCache.timestamp < CONFIG_CACHE_TTL_MS
+    ) {
+      return configCountsCache.data;
+    }
+
     const claudeDir = join(currentDir, '.claude');
 
     // Count all configs in parallel
@@ -107,11 +130,15 @@ export const configCountsWidget: Widget<ConfigCountsData> = {
     ]);
 
     // Only show if there's something to display
-    if (claudeMd === 0 && rules === 0 && mcps === 0 && hooks === 0) {
-      return null;
-    }
+    const data =
+      claudeMd === 0 && rules === 0 && mcps === 0 && hooks === 0
+        ? null
+        : { claudeMd, rules, mcps, hooks };
 
-    return { claudeMd, rules, mcps, hooks };
+    // Cache result
+    configCountsCache = { projectDir: currentDir, data, timestamp: Date.now() };
+
+    return data;
   },
 
   render(data: ConfigCountsData, ctx: WidgetContext): string {

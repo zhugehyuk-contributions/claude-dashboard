@@ -5,7 +5,7 @@
  * Displays model info, context usage, rate limits, and more
  */
 
-import { readFile } from 'fs/promises';
+import { readFile, stat } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 
@@ -17,6 +17,14 @@ import { getTranslations } from './utils/i18n.js';
 import { formatOutput } from './widgets/index.js';
 
 const CONFIG_PATH = join(homedir(), '.claude', 'claude-dashboard.local.json');
+
+/**
+ * Cached config with mtime-based invalidation
+ */
+let configCache: {
+  config: Config;
+  mtime: number;
+} | null = null;
 
 /**
  * Read and parse stdin JSON
@@ -35,10 +43,19 @@ async function readStdin(): Promise<StdinInput | null> {
 }
 
 /**
- * Load user configuration with migration support
+ * Load user configuration with mtime-based cache and migration support
  */
 async function loadConfig(): Promise<Config> {
   try {
+    // Check mtime for cache invalidation
+    const fileStat = await stat(CONFIG_PATH);
+    const mtime = fileStat.mtimeMs;
+
+    // Return cached if mtime matches
+    if (configCache?.mtime === mtime) {
+      return configCache.config;
+    }
+
     const content = await readFile(CONFIG_PATH, 'utf-8');
     const userConfig = JSON.parse(content);
 
@@ -53,6 +70,8 @@ async function loadConfig(): Promise<Config> {
       config.displayMode = 'compact';
     }
 
+    // Cache result
+    configCache = { config, mtime };
     return config;
   } catch {
     return DEFAULT_CONFIG;

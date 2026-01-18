@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // scripts/statusline.ts
-import { readFile as readFile5 } from "fs/promises";
+import { readFile as readFile5, stat as stat4 } from "fs/promises";
 import { join as join4 } from "path";
 import { homedir as homedir3 } from "os";
 
@@ -65,15 +65,17 @@ function colorize(text, color) {
 }
 
 // scripts/utils/api-client.ts
-import { readFile as readFile2, writeFile, mkdir, readdir, stat, unlink } from "fs/promises";
+import { readFile as readFile2, writeFile, mkdir, readdir, stat as stat2, unlink } from "fs/promises";
 import os from "os";
 import path from "path";
 
 // scripts/utils/credentials.ts
 import { execFileSync } from "child_process";
-import { readFile } from "fs/promises";
+import { readFile, stat } from "fs/promises";
 import { join } from "path";
 import { homedir } from "os";
+var KEYCHAIN_CACHE_TTL_MS = 1e4;
+var credentialsCache = null;
 async function getCredentials() {
   try {
     if (process.platform === "darwin") {
@@ -85,6 +87,9 @@ async function getCredentials() {
   }
 }
 async function getCredentialsFromKeychain() {
+  if (credentialsCache?.timestamp && Date.now() - credentialsCache.timestamp < KEYCHAIN_CACHE_TTL_MS) {
+    return credentialsCache.token;
+  }
   try {
     const result = execFileSync(
       "security",
@@ -92,7 +97,9 @@ async function getCredentialsFromKeychain() {
       { encoding: "utf-8", stdio: ["pipe", "pipe", "pipe"] }
     ).trim();
     const creds = JSON.parse(result);
-    return creds?.claudeAiOauth?.accessToken ?? null;
+    const token = creds?.claudeAiOauth?.accessToken ?? null;
+    credentialsCache = { token, timestamp: Date.now() };
+    return token;
   } catch {
     return await getCredentialsFromFile();
   }
@@ -100,9 +107,16 @@ async function getCredentialsFromKeychain() {
 async function getCredentialsFromFile() {
   try {
     const credPath = join(homedir(), ".claude", ".credentials.json");
+    const fileStat = await stat(credPath);
+    const mtime = fileStat.mtimeMs;
+    if (credentialsCache?.mtime === mtime) {
+      return credentialsCache.token;
+    }
     const content = await readFile(credPath, "utf-8");
     const creds = JSON.parse(content);
-    return creds?.claudeAiOauth?.accessToken ?? null;
+    const token = creds?.claudeAiOauth?.accessToken ?? null;
+    credentialsCache = { token, mtime };
+    return token;
   } catch {
     return null;
   }
@@ -116,7 +130,7 @@ function hashToken(token) {
 }
 
 // scripts/version.ts
-var VERSION = "1.2.0";
+var VERSION = "1.3.0";
 
 // scripts/utils/api-client.ts
 var API_TIMEOUT_MS = 5e3;
@@ -257,7 +271,7 @@ async function cleanupExpiredCache() {
       }
       const filePath = path.join(CACHE_DIR, file);
       try {
-        const fileStat = await stat(filePath);
+        const fileStat = await stat2(filePath);
         const ageSeconds = (now - fileStat.mtimeMs) / 1e3;
         if (ageSeconds > CACHE_MAX_AGE_SECONDS) {
           await unlink(filePath);
@@ -283,6 +297,7 @@ var en_default = {
     "7d_sonnet": "7d-S"
   },
   time: {
+    days: "d",
     hours: "h",
     minutes: "m",
     seconds: "s"
@@ -299,7 +314,10 @@ var en_default = {
     claudeMd: "CLAUDE.md",
     rules: "Rules",
     mcps: "MCP",
-    hooks: "Hooks"
+    hooks: "Hooks",
+    burnRate: "Rate",
+    cache: "Cache",
+    toLimit: "to"
   }
 };
 
@@ -317,6 +335,7 @@ var ko_default = {
     "7d_sonnet": "7\uC77C-S"
   },
   time: {
+    days: "\uC77C",
     hours: "\uC2DC\uAC04",
     minutes: "\uBD84",
     seconds: "\uCD08"
@@ -333,7 +352,10 @@ var ko_default = {
     claudeMd: "CLAUDE.md",
     rules: "\uADDC\uCE59",
     mcps: "MCP",
-    hooks: "\uD6C5"
+    hooks: "\uD6C5",
+    burnRate: "\uC18C\uBAA8\uC728",
+    cache: "\uCE90\uC2DC",
+    toLimit: "\uD6C4"
   }
 };
 
@@ -359,6 +381,20 @@ function getTranslations(config) {
   return LOCALES[lang] || LOCALES.en;
 }
 
+// scripts/utils/debug.ts
+var DEBUG = process.env.DEBUG === "claude-dashboard" || process.env.DEBUG === "1" || process.env.DEBUG === "true";
+function debugLog(context, message, error) {
+  if (!DEBUG)
+    return;
+  const timestamp = (/* @__PURE__ */ new Date()).toISOString();
+  const prefix = `[claude-dashboard:${context}]`;
+  if (error) {
+    console.error(`${timestamp} ${prefix} ${message}`, error);
+  } else {
+    console.log(`${timestamp} ${prefix} ${message}`);
+  }
+}
+
 // scripts/utils/formatters.ts
 function formatTokens(tokens) {
   if (tokens >= 1e6) {
@@ -381,8 +417,13 @@ function formatTimeRemaining(resetAt, t) {
   if (diffMs <= 0)
     return `0${t.time.minutes}`;
   const totalMinutes = Math.floor(diffMs / (1e3 * 60));
-  const hours = Math.floor(totalMinutes / 60);
+  const totalHours = Math.floor(totalMinutes / 60);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
   const minutes = totalMinutes % 60;
+  if (days > 0) {
+    return `${days}${t.time.days}${hours}${t.time.hours}`;
+  }
   if (hours > 0) {
     return `${hours}${t.time.hours}${minutes}${t.time.minutes}`;
   }
@@ -515,75 +556,59 @@ var costWidget = {
 };
 
 // scripts/widgets/rate-limit.ts
+function renderRateLimit(data, ctx, labelKey) {
+  if (data.isError) {
+    return colorize("\u26A0\uFE0F", COLORS.yellow);
+  }
+  const { translations: t } = ctx;
+  const color = getColorForPercent(data.utilization);
+  const label = `${t.labels[labelKey]}: ${colorize(`${data.utilization}%`, color)}`;
+  if (!data.resetsAt)
+    return label;
+  return `${label} (${formatTimeRemaining(data.resetsAt, t)})`;
+}
+function getLimitData(limits, key) {
+  const limit = limits?.[key];
+  if (!limit)
+    return null;
+  return {
+    utilization: Math.round(limit.utilization),
+    resetsAt: limit.resets_at
+  };
+}
 var rateLimit5hWidget = {
   id: "rateLimit5h",
   name: "5h Rate Limit",
   async getData(ctx) {
-    const limits = ctx.rateLimits;
-    if (!limits || !limits.five_hour) {
-      return { utilization: 0, resetsAt: null, isError: true };
-    }
-    return {
-      utilization: Math.round(limits.five_hour.utilization),
-      resetsAt: limits.five_hour.resets_at
-    };
+    const data = getLimitData(ctx.rateLimits, "five_hour");
+    return data ?? { utilization: 0, resetsAt: null, isError: true };
   },
   render(data, ctx) {
-    if (data.isError) {
-      return colorize("\u26A0\uFE0F", COLORS.yellow);
-    }
-    const { translations: t } = ctx;
-    const color = getColorForPercent(data.utilization);
-    let text = `${t.labels["5h"]}: ${colorize(`${data.utilization}%`, color)}`;
-    if (data.resetsAt) {
-      const remaining = formatTimeRemaining(data.resetsAt, t);
-      text += ` (${remaining})`;
-    }
-    return text;
+    return renderRateLimit(data, ctx, "5h");
   }
 };
 var rateLimit7dWidget = {
   id: "rateLimit7d",
   name: "7d Rate Limit",
   async getData(ctx) {
-    if (ctx.config.plan !== "max") {
+    if (ctx.config.plan !== "max")
       return null;
-    }
-    const limits = ctx.rateLimits;
-    if (!limits?.seven_day) {
-      return null;
-    }
-    return {
-      utilization: Math.round(limits.seven_day.utilization),
-      resetsAt: limits.seven_day.resets_at
-    };
+    return getLimitData(ctx.rateLimits, "seven_day");
   },
   render(data, ctx) {
-    const { translations: t } = ctx;
-    const color = getColorForPercent(data.utilization);
-    return `${t.labels["7d_all"]}: ${colorize(`${data.utilization}%`, color)}`;
+    return renderRateLimit(data, ctx, "7d_all");
   }
 };
 var rateLimit7dSonnetWidget = {
   id: "rateLimit7dSonnet",
   name: "7d Sonnet Rate Limit",
   async getData(ctx) {
-    if (ctx.config.plan !== "max") {
+    if (ctx.config.plan !== "max")
       return null;
-    }
-    const limits = ctx.rateLimits;
-    if (!limits?.seven_day_sonnet) {
-      return null;
-    }
-    return {
-      utilization: Math.round(limits.seven_day_sonnet.utilization),
-      resetsAt: limits.seven_day_sonnet.resets_at
-    };
+    return getLimitData(ctx.rateLimits, "seven_day_sonnet");
   },
   render(data, ctx) {
-    const { translations: t } = ctx;
-    const color = getColorForPercent(data.utilization);
-    return `${t.labels["7d_sonnet"]}: ${colorize(`${data.utilization}%`, color)}`;
+    return renderRateLimit(data, ctx, "7d_sonnet");
   }
 };
 
@@ -652,6 +677,8 @@ var projectInfoWidget = {
 import { readdir as readdir2, access } from "fs/promises";
 import { join as join2 } from "path";
 import { constants } from "fs";
+var CONFIG_CACHE_TTL_MS = 3e4;
+var configCountsCache = null;
 async function pathExists(path2) {
   try {
     await access(path2, constants.F_OK);
@@ -710,6 +737,9 @@ var configCountsWidget = {
     if (!currentDir) {
       return null;
     }
+    if (configCountsCache?.projectDir === currentDir && Date.now() - configCountsCache.timestamp < CONFIG_CACHE_TTL_MS) {
+      return configCountsCache.data;
+    }
     const claudeDir = join2(currentDir, ".claude");
     const [claudeMd, rules, mcps, hooks] = await Promise.all([
       countClaudeMd(currentDir),
@@ -717,10 +747,9 @@ var configCountsWidget = {
       countMcps(currentDir),
       countFiles(join2(claudeDir, "hooks"))
     ]);
-    if (claudeMd === 0 && rules === 0 && mcps === 0 && hooks === 0) {
-      return null;
-    }
-    return { claudeMd, rules, mcps, hooks };
+    const data = claudeMd === 0 && rules === 0 && mcps === 0 && hooks === 0 ? null : { claudeMd, rules, mcps, hooks };
+    configCountsCache = { projectDir: currentDir, data, timestamp: Date.now() };
+    return data;
   },
   render(data, ctx) {
     const { translations: t } = ctx;
@@ -741,34 +770,101 @@ var configCountsWidget = {
   }
 };
 
-// scripts/widgets/session-duration.ts
-import { readFile as readFile3, writeFile as writeFile2, mkdir as mkdir2 } from "fs/promises";
+// scripts/utils/session.ts
+import { readFile as readFile3, mkdir as mkdir2, open } from "fs/promises";
 import { join as join3 } from "path";
 import { homedir as homedir2 } from "os";
 var SESSION_DIR = join3(homedir2(), ".cache", "claude-dashboard", "sessions");
+var sessionCache = /* @__PURE__ */ new Map();
+var pendingRequests2 = /* @__PURE__ */ new Map();
+function sanitizeSessionId(sessionId) {
+  return sessionId.replace(/[^a-zA-Z0-9-_]/g, "");
+}
 async function getSessionStartTime(sessionId) {
-  const sessionFile = join3(SESSION_DIR, `${sessionId}.json`);
+  const safeSessionId = sanitizeSessionId(sessionId);
+  if (sessionCache.has(safeSessionId)) {
+    return sessionCache.get(safeSessionId);
+  }
+  const pending = pendingRequests2.get(safeSessionId);
+  if (pending) {
+    return pending;
+  }
+  const promise = getOrCreateSessionStartTimeImpl(safeSessionId);
+  pendingRequests2.set(safeSessionId, promise);
+  try {
+    return await promise;
+  } finally {
+    pendingRequests2.delete(safeSessionId);
+  }
+}
+async function getOrCreateSessionStartTimeImpl(safeSessionId) {
+  const sessionFile = join3(SESSION_DIR, `${safeSessionId}.json`);
   try {
     const content = await readFile3(sessionFile, "utf-8");
     const data = JSON.parse(content);
+    if (typeof data.startTime !== "number") {
+      debugLog("session", `Invalid session file format for ${safeSessionId}`);
+      throw new Error("Invalid session file format");
+    }
+    sessionCache.set(safeSessionId, data.startTime);
     return data.startTime;
-  } catch {
+  } catch (error) {
+    const isNotFound = error instanceof Error && "code" in error && error.code === "ENOENT";
+    if (!isNotFound) {
+      debugLog("session", `Failed to read session ${safeSessionId}`, error);
+    }
     const startTime = Date.now();
     try {
       await mkdir2(SESSION_DIR, { recursive: true });
-      await writeFile2(sessionFile, JSON.stringify({ startTime }), "utf-8");
-    } catch {
+      const fileHandle = await open(sessionFile, "wx");
+      try {
+        await fileHandle.writeFile(JSON.stringify({ startTime }), "utf-8");
+      } finally {
+        await fileHandle.close();
+      }
+      sessionCache.set(safeSessionId, startTime);
+      return startTime;
+    } catch (writeError) {
+      const isExists = writeError instanceof Error && "code" in writeError && writeError.code === "EEXIST";
+      if (isExists) {
+        try {
+          const content = await readFile3(sessionFile, "utf-8");
+          const data = JSON.parse(content);
+          if (typeof data.startTime === "number") {
+            sessionCache.set(safeSessionId, data.startTime);
+            return data.startTime;
+          }
+        } catch {
+          debugLog("session", `Failed to read existing session ${safeSessionId} after EEXIST`);
+        }
+      } else {
+        debugLog("session", `Failed to persist session ${safeSessionId}`, writeError);
+      }
+      sessionCache.set(safeSessionId, startTime);
+      return startTime;
     }
-    return startTime;
   }
 }
+async function getSessionElapsedMs(sessionId) {
+  const startTime = await getSessionStartTime(sessionId);
+  return Date.now() - startTime;
+}
+async function getSessionElapsedMinutes(ctx, minMinutes = 1) {
+  const sessionId = ctx.stdin.session_id || "default";
+  const elapsedMs = await getSessionElapsedMs(sessionId);
+  const elapsedMinutes = elapsedMs / (1e3 * 60);
+  if (elapsedMinutes < minMinutes)
+    return null;
+  return elapsedMinutes;
+}
+
+// scripts/widgets/session-duration.ts
 var sessionDurationWidget = {
   id: "sessionDuration",
   name: "Session Duration",
   async getData(ctx) {
     const sessionId = ctx.stdin.session_id || "default";
-    const startTime = await getSessionStartTime(sessionId);
-    const elapsedMs = Date.now() - startTime;
+    const elapsedMs = await getSessionElapsedMs(sessionId);
     return { elapsedMs };
   },
   render(data, ctx) {
@@ -779,7 +875,7 @@ var sessionDurationWidget = {
 };
 
 // scripts/utils/transcript-parser.ts
-import { readFile as readFile4, stat as stat2 } from "fs/promises";
+import { readFile as readFile4, stat as stat3 } from "fs/promises";
 var cachedTranscript = null;
 function parseJsonlLine(line) {
   try {
@@ -790,7 +886,7 @@ function parseJsonlLine(line) {
 }
 async function parseTranscript(transcriptPath) {
   try {
-    const fileStat = await stat2(transcriptPath);
+    const fileStat = await stat3(transcriptPath);
     const mtime = fileStat.mtimeMs;
     if (cachedTranscript?.path === transcriptPath && cachedTranscript.mtime === mtime) {
       return cachedTranscript.data;
@@ -1019,6 +1115,96 @@ var todoProgressWidget = {
   }
 };
 
+// scripts/widgets/burn-rate.ts
+var burnRateWidget = {
+  id: "burnRate",
+  name: "Burn Rate",
+  async getData(ctx) {
+    const usage = ctx.stdin.context_window?.current_usage;
+    let elapsedMinutes;
+    try {
+      elapsedMinutes = await getSessionElapsedMinutes(ctx, 0);
+    } catch (error) {
+      debugLog("burnRate", "Failed to get session elapsed time", error);
+      return null;
+    }
+    if (elapsedMinutes === null)
+      return null;
+    if (!usage || elapsedMinutes === 0) {
+      return { tokensPerMinute: 0 };
+    }
+    const totalTokens = usage.input_tokens + usage.output_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
+    if (totalTokens === 0) {
+      return { tokensPerMinute: 0 };
+    }
+    const tokensPerMinute = totalTokens / elapsedMinutes;
+    if (!Number.isFinite(tokensPerMinute) || tokensPerMinute < 0) {
+      return null;
+    }
+    return { tokensPerMinute };
+  },
+  render(data) {
+    return `\u{1F525} ${formatTokens(Math.round(data.tokensPerMinute))}/min`;
+  }
+};
+
+// scripts/widgets/depletion-time.ts
+var MAX_DISPLAY_MINUTES = 24 * 60;
+var MIN_UTILIZATION_RATE = 0.01;
+var depletionTimeWidget = {
+  id: "depletionTime",
+  name: "Depletion Time",
+  async getData(ctx) {
+    const utilization = ctx.rateLimits?.five_hour?.utilization;
+    if (!utilization || utilization < 1)
+      return null;
+    const elapsedMinutes = await getSessionElapsedMinutes(ctx, 0);
+    if (elapsedMinutes === null || elapsedMinutes === 0)
+      return null;
+    const utilizationPerMinute = utilization / elapsedMinutes;
+    if (utilizationPerMinute < MIN_UTILIZATION_RATE)
+      return null;
+    const minutesToLimit = (100 - utilization) / utilizationPerMinute;
+    if (!Number.isFinite(minutesToLimit) || minutesToLimit < 0)
+      return null;
+    if (minutesToLimit > MAX_DISPLAY_MINUTES)
+      return null;
+    return {
+      minutesToLimit: Math.round(minutesToLimit),
+      limitType: "5h"
+    };
+  },
+  render(data, ctx) {
+    const duration = formatDuration(data.minutesToLimit * 60 * 1e3, ctx.translations.time);
+    return colorize(`\u23F3 ~${duration} to ${data.limitType}`, COLORS.yellow);
+  }
+};
+
+// scripts/widgets/cache-hit.ts
+var cacheHitWidget = {
+  id: "cacheHit",
+  name: "Cache Hit Rate",
+  async getData(ctx) {
+    const usage = ctx.stdin.context_window?.current_usage;
+    if (!usage) {
+      return { hitPercentage: 0 };
+    }
+    const cacheRead = usage.cache_read_input_tokens;
+    const freshInput = usage.input_tokens;
+    const cacheCreation = usage.cache_creation_input_tokens;
+    const total = cacheRead + freshInput + cacheCreation;
+    if (total === 0) {
+      return { hitPercentage: 0 };
+    }
+    const hitPercentage = Math.min(100, Math.max(0, Math.round(cacheRead / total * 100)));
+    return { hitPercentage };
+  },
+  render(data) {
+    const color = getColorForPercent(100 - data.hitPercentage);
+    return `\u{1F4E6} ${colorize(`${data.hitPercentage}%`, color)}`;
+  }
+};
+
 // scripts/widgets/index.ts
 var widgetRegistry = /* @__PURE__ */ new Map([
   ["model", modelWidget],
@@ -1032,7 +1218,10 @@ var widgetRegistry = /* @__PURE__ */ new Map([
   ["sessionDuration", sessionDurationWidget],
   ["toolActivity", toolActivityWidget],
   ["agentStatus", agentStatusWidget],
-  ["todoProgress", todoProgressWidget]
+  ["todoProgress", todoProgressWidget],
+  ["burnRate", burnRateWidget],
+  ["depletionTime", depletionTimeWidget],
+  ["cacheHit", cacheHitWidget]
 ]);
 function getWidget(id) {
   return widgetRegistry.get(id);
@@ -1047,12 +1236,12 @@ function getLines(config) {
     ],
     normal: [
       ["model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"],
-      ["projectInfo", "sessionDuration", "todoProgress"]
+      ["projectInfo", "sessionDuration", "burnRate", "todoProgress"]
     ],
     detailed: [
       ["model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"],
-      ["projectInfo", "sessionDuration", "todoProgress"],
-      ["configCounts", "toolActivity", "agentStatus"]
+      ["projectInfo", "sessionDuration", "burnRate", "depletionTime", "todoProgress"],
+      ["configCounts", "toolActivity", "agentStatus", "cacheHit"]
     ]
   };
   return presets[config.displayMode] || presets.compact;
@@ -1069,7 +1258,8 @@ async function renderWidget(widgetId, ctx) {
     }
     const output = widget.render(data, ctx);
     return { id: widgetId, output };
-  } catch {
+  } catch (error) {
+    debugLog("widget", `Widget '${widgetId}' failed`, error);
     return null;
   }
 }
@@ -1099,6 +1289,7 @@ async function formatOutput(ctx) {
 
 // scripts/statusline.ts
 var CONFIG_PATH = join4(homedir3(), ".claude", "claude-dashboard.local.json");
+var configCache = null;
 async function readStdin() {
   try {
     const chunks = [];
@@ -1113,6 +1304,11 @@ async function readStdin() {
 }
 async function loadConfig() {
   try {
+    const fileStat = await stat4(CONFIG_PATH);
+    const mtime = fileStat.mtimeMs;
+    if (configCache?.mtime === mtime) {
+      return configCache.config;
+    }
     const content = await readFile5(CONFIG_PATH, "utf-8");
     const userConfig = JSON.parse(content);
     const config = {
@@ -1122,6 +1318,7 @@ async function loadConfig() {
     if (!config.displayMode) {
       config.displayMode = "compact";
     }
+    configCache = { config, mtime };
     return config;
   } catch {
     return DEFAULT_CONFIG;

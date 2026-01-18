@@ -44,7 +44,10 @@ export type WidgetId =
   | 'sessionDuration'
   | 'toolActivity'
   | 'agentStatus'
-  | 'todoProgress';
+  | 'todoProgress'
+  | 'burnRate'
+  | 'depletionTime'
+  | 'cacheHit';
 
 /**
  * Display mode for status line output
@@ -64,12 +67,12 @@ export const DISPLAY_PRESETS: Record<Exclude<DisplayMode, 'custom'>, WidgetId[][
   ],
   normal: [
     ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
-    ['projectInfo', 'sessionDuration', 'todoProgress'],
+    ['projectInfo', 'sessionDuration', 'burnRate', 'todoProgress'],
   ],
   detailed: [
     ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
-    ['projectInfo', 'sessionDuration', 'todoProgress'],
-    ['configCounts', 'toolActivity', 'agentStatus'],
+    ['projectInfo', 'sessionDuration', 'burnRate', 'depletionTime', 'todoProgress'],
+    ['configCounts', 'toolActivity', 'agentStatus', 'cacheHit'],
   ],
 };
 
@@ -116,6 +119,7 @@ export interface Translations {
     '7d_sonnet': string;
   };
   time: {
+    days: string;
     hours: string;
     minutes: string;
     seconds: string;
@@ -134,6 +138,9 @@ export interface Translations {
     rules: string;
     mcps: string;
     hooks: string;
+    burnRate: string;
+    cache: string;
+    toLimit: string;
   };
 }
 
@@ -233,6 +240,36 @@ export interface TodoProgressData {
 }
 
 /**
+ * Burn rate data - tokens consumed per minute
+ * @invariant tokensPerMinute >= 0 (enforced in widget)
+ */
+export interface BurnRateData {
+  /** Tokens consumed per minute (session average). Always >= 0. */
+  tokensPerMinute: number;
+}
+
+/**
+ * Depletion time data - estimated time until rate limit is reached
+ * @invariant minutesToLimit >= 0 (enforced in widget)
+ * @invariant Calculation assumes all current utilization is from this session (approximation)
+ */
+export interface DepletionTimeData {
+  /** Estimated minutes until rate limit is reached. Always >= 0. */
+  minutesToLimit: number;
+  /** Which rate limit will be hit first */
+  limitType: '5h' | '7d';
+}
+
+/**
+ * Cache hit rate data - percentage of tokens served from cache
+ * @invariant hitPercentage is in range [0, 100] (enforced in widget)
+ */
+export interface CacheHitData {
+  /** Cache hit percentage (0-100). Higher is better (more cache reuse). */
+  hitPercentage: number;
+}
+
+/**
  * Union type of all widget data
  */
 export type WidgetData =
@@ -245,7 +282,10 @@ export type WidgetData =
   | SessionDurationData
   | ToolActivityData
   | AgentStatusData
-  | TodoProgressData;
+  | TodoProgressData
+  | BurnRateData
+  | DepletionTimeData
+  | CacheHitData;
 
 /**
  * Transcript entry from JSONL file
