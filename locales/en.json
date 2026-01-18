@@ -11,6 +11,7 @@
     "7d_sonnet": "7d-S"
   },
   "time": {
+    "days": "d",
     "hours": "h",
     "minutes": "m",
     "seconds": "s"

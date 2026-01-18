@@ -13,16 +13,25 @@ export const burnRateWidget: Widget<BurnRateData> = {
 
   async getData(ctx: WidgetContext): Promise<BurnRateData | null> {
     const usage = ctx.stdin.context_window?.current_usage;
-    if (!usage) return null;
 
-    const elapsedMinutes = await getSessionElapsedMinutes(ctx);
-    if (!elapsedMinutes) return null;
+    const elapsedMinutes = await getSessionElapsedMinutes(ctx, 0);
+    if (elapsedMinutes === null) return null;
+
+    // Show 0/min at session start or when no usage data
+    if (!usage || elapsedMinutes === 0) {
+      return { tokensPerMinute: 0 };
+    }
 
     const totalTokens =
       usage.input_tokens +
       usage.output_tokens +
       usage.cache_creation_input_tokens +
       usage.cache_read_input_tokens;
+
+    // Show 0/min if no tokens used yet
+    if (totalTokens === 0) {
+      return { tokensPerMinute: 0 };
+    }
 
     const tokensPerMinute = totalTokens / elapsedMinutes;
 

@@ -283,6 +283,7 @@ var en_default = {
     "7d_sonnet": "7d-S"
   },
   time: {
+    days: "d",
     hours: "h",
     minutes: "m",
     seconds: "s"
@@ -320,6 +321,7 @@ var ko_default = {
     "7d_sonnet": "7\uC77C-S"
   },
   time: {
+    days: "\uC77C",
     hours: "\uC2DC\uAC04",
     minutes: "\uBD84",
     seconds: "\uCD08"
@@ -401,8 +403,13 @@ function formatTimeRemaining(resetAt, t) {
   if (diffMs <= 0)
     return `0${t.time.minutes}`;
   const totalMinutes = Math.floor(diffMs / (1e3 * 60));
-  const hours = Math.floor(totalMinutes / 60);
+  const totalHours = Math.floor(totalMinutes / 60);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
   const minutes = totalMinutes % 60;
+  if (days > 0) {
+    return `${days}${t.time.days}${hours}${t.time.hours}`;
+  }
   if (hours > 0) {
     return `${hours}${t.time.hours}${minutes}${t.time.minutes}`;
   }
@@ -1051,12 +1058,16 @@ var burnRateWidget = {
   name: "Burn Rate",
   async getData(ctx) {
     const usage = ctx.stdin.context_window?.current_usage;
-    if (!usage)
+    const elapsedMinutes = await getSessionElapsedMinutes(ctx, 0);
+    if (elapsedMinutes === null)
       return null;
-    const elapsedMinutes = await getSessionElapsedMinutes(ctx);
-    if (!elapsedMinutes)
-      return null;
+    if (!usage || elapsedMinutes === 0) {
+      return { tokensPerMinute: 0 };
+    }
     const totalTokens = usage.input_tokens + usage.output_tokens + usage.cache_creation_input_tokens + usage.cache_read_input_tokens;
+    if (totalTokens === 0) {
+      return { tokensPerMinute: 0 };
+    }
     const tokensPerMinute = totalTokens / elapsedMinutes;
     if (!Number.isFinite(tokensPerMinute) || tokensPerMinute < 0) {
       return null;
@@ -1078,8 +1089,8 @@ var depletionTimeWidget = {
     const utilization = ctx.rateLimits?.five_hour?.utilization;
     if (!utilization || utilization < 1)
       return null;
-    const elapsedMinutes = await getSessionElapsedMinutes(ctx);
-    if (!elapsedMinutes)
+    const elapsedMinutes = await getSessionElapsedMinutes(ctx, 0);
+    if (elapsedMinutes === null || elapsedMinutes === 0)
       return null;
     const utilizationPerMinute = utilization / elapsedMinutes;
     if (utilizationPerMinute < MIN_UTILIZATION_RATE)
@@ -1106,13 +1117,15 @@ var cacheHitWidget = {
   name: "Cache Hit Rate",
   async getData(ctx) {
     const usage = ctx.stdin.context_window?.current_usage;
-    if (!usage)
-      return null;
+    if (!usage) {
+      return { hitPercentage: 0 };
+    }
     const cacheRead = usage.cache_read_input_tokens;
     const freshInput = usage.input_tokens;
     const total = cacheRead + freshInput;
-    if (total === 0)
-      return null;
+    if (total === 0) {
+      return { hitPercentage: 0 };
+    }
     const hitPercentage = Math.round(cacheRead / total * 100);
     return { hitPercentage };
   },

@@ -15,13 +15,16 @@ Comprehensive status line plugin for Claude Code with context usage, API rate li
 - 📊 **Progress Bar**: Color-coded context usage (green → yellow → red)
 - 📈 **Token Count**: Current/total tokens in K/M format
 - 💰 **Cost Tracking**: Cumulative session cost in USD
-- ⏱️ **Rate Limits**: 5h session limit with reset countdown, 7d usage
+- ⏱️ **Rate Limits**: 5h session limit with reset countdown, 7d usage (supports day units: 3d2h)
 - 📁 **Project Info**: Directory name with git branch (* for uncommitted changes)
 - 🔧 **Config Counts**: CLAUDE.md, rules, MCPs, hooks counts
 - ⚙️ **Tool Activity**: Running/completed tools tracking
 - ⏱️ **Session Duration**: Session time tracking
 - 🤖 **Agent Status**: Subagent progress tracking
 - ✓ **Todo Progress**: Task completion rate
+- 🔥 **Burn Rate**: Token consumption per minute
+- 📦 **Cache Hit**: Cache hit rate percentage
+- ⏳ **Depletion Time**: Estimated time to rate limit
 - 🌐 **i18n**: English and Korean support (auto-detect)
 - 📐 **Multi-line**: Compact (1), Normal (2), Detailed (3) line modes
 
@@ -114,14 +117,17 @@ Run `/claude-dashboard:setup` without arguments to use interactive mode:
 | `toolActivity` | Running/completed tools |
 | `agentStatus` | Subagent progress |
 | `todoProgress` | Todo completion rate |
+| `burnRate` | Token consumption per minute |
+| `cacheHit` | Cache hit rate percentage |
+| `depletionTime` | Estimated time to rate limit |
 
 ### Display Mode Presets
 
 | Mode | Lines | Line 1 | Line 2 | Line 3 |
 |------|-------|--------|--------|--------|
 | `compact` | 1 | model, context, cost, rateLimit5h, rateLimit7d, rateLimit7dSonnet | - | - |
-| `normal` | 2 | (same as compact) | projectInfo, sessionDuration, todoProgress | - |
-| `detailed` | 3 | (same as compact) | (same as normal) | configCounts, toolActivity, agentStatus |
+| `normal` | 2 | (same as compact) | projectInfo, sessionDuration, burnRate, todoProgress | - |
+| `detailed` | 3 | (same as compact) | projectInfo, sessionDuration, burnRate, depletionTime, todoProgress | configCounts, toolActivity, agentStatus, cacheHit |
 
 ### Configuration File
 

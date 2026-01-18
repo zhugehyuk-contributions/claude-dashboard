@@ -11,6 +11,7 @@
     "7d_sonnet": "7일-S"
   },
   "time": {
+    "days": "일",
     "hours": "시간",
     "minutes": "분",
     "seconds": "초"

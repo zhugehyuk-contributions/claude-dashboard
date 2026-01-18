@@ -12,14 +12,20 @@ export const cacheHitWidget: Widget<CacheHitData> = {
 
   async getData(ctx: WidgetContext): Promise<CacheHitData | null> {
     const usage = ctx.stdin.context_window?.current_usage;
-    if (!usage) return null;
+
+    // Show 0% at session start or when no usage data
+    if (!usage) {
+      return { hitPercentage: 0 };
+    }
 
     const cacheRead = usage.cache_read_input_tokens;
     const freshInput = usage.input_tokens;
     const total = cacheRead + freshInput;
 
-    // Don't show if no input tokens yet
-    if (total === 0) return null;
+    // Show 0% if no input tokens yet
+    if (total === 0) {
+      return { hitPercentage: 0 };
+    }
 
     const hitPercentage = Math.round((cacheRead / total) * 100);
 

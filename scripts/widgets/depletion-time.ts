@@ -19,8 +19,8 @@ export const depletionTimeWidget: Widget<DepletionTimeData> = {
     const utilization = ctx.rateLimits?.five_hour?.utilization;
     if (!utilization || utilization < 1) return null;
 
-    const elapsedMinutes = await getSessionElapsedMinutes(ctx);
-    if (!elapsedMinutes) return null;
+    const elapsedMinutes = await getSessionElapsedMinutes(ctx, 0);
+    if (elapsedMinutes === null || elapsedMinutes === 0) return null;
 
     // Calculate utilization rate per minute (approximation: assumes all usage from this session)
     const utilizationPerMinute = utilization / elapsedMinutes;
