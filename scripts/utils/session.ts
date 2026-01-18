@@ -2,7 +2,7 @@
  * Session utilities - shared session time management
  */
 
-import { readFile, writeFile, mkdir } from 'fs/promises';
+import { readFile, mkdir, open } from 'fs/promises';
 import { join } from 'path';
 import { homedir } from 'os';
 import type { WidgetContext } from '../types.js';
@@ -13,28 +13,62 @@ const SESSION_DIR = join(homedir(), '.cache', 'claude-dashboard', 'sessions');
 // In-memory cache to avoid repeated file I/O during a single process lifecycle
 const sessionCache = new Map<string, number>();
 
+// Pending requests to prevent race conditions when multiple processes start simultaneously
+const pendingRequests = new Map<string, Promise<number>>();
+
+/**
+ * Sanitize session ID to prevent path traversal attacks.
+ * Only allows alphanumeric characters, hyphens, and underscores.
+ */
+function sanitizeSessionId(sessionId: string): string {
+  return sessionId.replace(/[^a-zA-Z0-9-_]/g, '');
+}
+
 /**
  * Get or create session start time
  */
 export async function getSessionStartTime(sessionId: string): Promise<number> {
+  const safeSessionId = sanitizeSessionId(sessionId);
+
   // Check memory cache first
-  if (sessionCache.has(sessionId)) {
-    return sessionCache.get(sessionId)!;
+  if (sessionCache.has(safeSessionId)) {
+    return sessionCache.get(safeSessionId)!;
   }
 
-  const sessionFile = join(SESSION_DIR, `${sessionId}.json`);
+  // Check if there's already a pending request for this session
+  const pending = pendingRequests.get(safeSessionId);
+  if (pending) {
+    return pending;
+  }
+
+  // Create and store the promise to deduplicate concurrent requests
+  const promise = getOrCreateSessionStartTimeImpl(safeSessionId);
+  pendingRequests.set(safeSessionId, promise);
+
+  try {
+    return await promise;
+  } finally {
+    pendingRequests.delete(safeSessionId);
+  }
+}
+
+/**
+ * Internal implementation for getting or creating session start time
+ */
+async function getOrCreateSessionStartTimeImpl(safeSessionId: string): Promise<number> {
+  const sessionFile = join(SESSION_DIR, `${safeSessionId}.json`);
 
   try {
     const content = await readFile(sessionFile, 'utf-8');
     const data = JSON.parse(content);
 
     if (typeof data.startTime !== 'number') {
-      debugLog('session', `Invalid session file format for ${sessionId}`);
+      debugLog('session', `Invalid session file format for ${safeSessionId}`);
       throw new Error('Invalid session file format');
     }
 
     // Cache result before returning
-    sessionCache.set(sessionId, data.startTime);
+    sessionCache.set(safeSessionId, data.startTime);
     return data.startTime;
   } catch (error: unknown) {
     // Check if file simply doesn't exist (expected case)
@@ -45,23 +79,53 @@ export async function getSessionStartTime(sessionId: string): Promise<number> {
 
     if (!isNotFound) {
       // Unexpected error - log for debugging
-      debugLog('session', `Failed to read session ${sessionId}`, error);
+      debugLog('session', `Failed to read session ${safeSessionId}`, error);
     }
 
-    // Create new session
+    // Create new session with atomic file creation
     const startTime = Date.now();
 
     try {
       await mkdir(SESSION_DIR, { recursive: true });
-      await writeFile(sessionFile, JSON.stringify({ startTime }), 'utf-8');
-    } catch (writeError) {
-      debugLog('session', `Failed to persist session ${sessionId}`, writeError);
-      // Continue with in-memory start time - widget will still work for current process
-    }
 
-    // Cache result before returning
-    sessionCache.set(sessionId, startTime);
-    return startTime;
+      // Use O_EXCL flag for atomic creation - fails if file already exists
+      // This prevents race conditions where multiple processes create different start times
+      const fileHandle = await open(sessionFile, 'wx');
+      try {
+        await fileHandle.writeFile(JSON.stringify({ startTime }), 'utf-8');
+      } finally {
+        await fileHandle.close();
+      }
+
+      // Cache result before returning
+      sessionCache.set(safeSessionId, startTime);
+      return startTime;
+    } catch (writeError: unknown) {
+      // If file was created by another process (EEXIST), read it instead
+      const isExists =
+        writeError instanceof Error &&
+        'code' in writeError &&
+        (writeError as NodeJS.ErrnoException).code === 'EEXIST';
+
+      if (isExists) {
+        try {
+          const content = await readFile(sessionFile, 'utf-8');
+          const data = JSON.parse(content);
+          if (typeof data.startTime === 'number') {
+            sessionCache.set(safeSessionId, data.startTime);
+            return data.startTime;
+          }
+        } catch {
+          debugLog('session', `Failed to read existing session ${safeSessionId} after EEXIST`);
+        }
+      } else {
+        debugLog('session', `Failed to persist session ${safeSessionId}`, writeError);
+      }
+
+      // Fallback: Continue with in-memory start time - widget will still work for current process
+      sessionCache.set(safeSessionId, startTime);
+      return startTime;
+    }
   }
 }
 
