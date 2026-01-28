@@ -1324,6 +1324,10 @@ async function fetchFromCodexApi(auth) {
       debugLog("codex", "fetchFromCodexApi: invalid response - missing required fields");
       return null;
     }
+    if (typeof data.rate_limit !== "object" || data.rate_limit === null) {
+      debugLog("codex", "fetchFromCodexApi: invalid response - rate_limit is not an object");
+      return null;
+    }
     const typedData = data;
     debugLog("codex", "fetchFromCodexApi: got data", typedData.plan_type);
     const model = await getCodexModel();

@@ -108,7 +108,9 @@ async function getCodexAuth(): Promise<CodexAuthData | null> {
 export async function getCodexModel(): Promise<string | null> {
   try {
     const raw = await readFile(CODEX_CONFIG_PATH, 'utf-8');
-    // Parse TOML: model = "gpt-5.2-codex" or model = 'gpt-5.2-codex' with optional comment
+    // Parse simple TOML: model = "value" or model = 'value'
+    // Limitations: Only root-level keys supported, no sections [section], no escaped quotes
+    // Falls back to null (displayed as "unknown") on parse failure
     const match = raw.match(/^model\s*=\s*["']([^"']+)["']\s*(?:#.*)?$/m);
     return match ? match[1] : null;
   } catch {
@@ -193,6 +195,10 @@ async function fetchFromCodexApi(
     }
     if (!('rate_limit' in data) || !('plan_type' in data)) {
       debugLog('codex', 'fetchFromCodexApi: invalid response - missing required fields');
+      return null;
+    }
+    if (typeof (data as any).rate_limit !== 'object' || (data as any).rate_limit === null) {
+      debugLog('codex', 'fetchFromCodexApi: invalid response - rate_limit is not an object');
       return null;
     }
 
