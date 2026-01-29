@@ -48,7 +48,8 @@ export type WidgetId =
   | 'burnRate'
   | 'depletionTime'
   | 'cacheHit'
-  | 'codexUsage';
+  | 'codexUsage'
+  | 'geminiUsage';
 
 /**
  * Display mode for status line output
@@ -74,7 +75,7 @@ export const DISPLAY_PRESETS: Record<Exclude<DisplayMode, 'custom'>, WidgetId[][
     ['model', 'context', 'cost', 'rateLimit5h', 'rateLimit7d', 'rateLimit7dSonnet'],
     ['projectInfo', 'sessionDuration', 'burnRate', 'depletionTime', 'todoProgress'],
     ['configCounts', 'toolActivity', 'agentStatus', 'cacheHit'],
-    ['codexUsage'],
+    ['codexUsage', 'geminiUsage'],
   ],
 };
 
@@ -304,6 +305,33 @@ export interface CodexUsageData {
 }
 
 /**
+ * Gemini CLI usage limits from Google Code Assist API
+ */
+export interface GeminiUsageLimits {
+  /** Current model from settings.json */
+  model: string;
+  /** Used percentage (0-100) for current model */
+  usedPercent: number | null;
+  /** Reset time as ISO string */
+  resetAt: string | null;
+  /** All buckets from API response */
+  buckets: Array<{
+    modelId?: string;
+    usedPercent: number | null;
+    resetAt: string | null;
+  }>;
+}
+
+/**
+ * Gemini usage widget data
+ */
+export interface GeminiUsageData {
+  model: string;
+  usedPercent: number | null;
+  resetAt: string | null;
+}
+
+/**
  * Union type of all widget data
  */
 export type WidgetData =
@@ -320,7 +348,8 @@ export type WidgetData =
   | BurnRateData
   | DepletionTimeData
   | CacheHitData
-  | CodexUsageData;
+  | CodexUsageData
+  | GeminiUsageData;
 
 /**
  * Transcript entry from JSONL file

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 // scripts/statusline.ts
-import { readFile as readFile6, stat as stat5 } from "fs/promises";
+import { readFile as readFile7, stat as stat6 } from "fs/promises";
 import { join as join4 } from "path";
 import { homedir as homedir3 } from "os";
 
@@ -18,7 +18,7 @@ var DISPLAY_PRESETS = {
     ["model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"],
     ["projectInfo", "sessionDuration", "burnRate", "depletionTime", "todoProgress"],
     ["configCounts", "toolActivity", "agentStatus", "cacheHit"],
-    ["codexUsage"]
+    ["codexUsage", "geminiUsage"]
   ]
 };
 var DEFAULT_CONFIG = {
@@ -696,9 +696,9 @@ import { join as join2 } from "path";
 import { constants } from "fs";
 var CONFIG_CACHE_TTL_MS = 3e4;
 var configCountsCache = null;
-async function pathExists(path3) {
+async function pathExists(path4) {
   try {
-    await access(path3, constants.F_OK);
+    await access(path4, constants.F_OK);
     return true;
   } catch {
     return false;
@@ -726,7 +726,7 @@ async function countClaudeMd(projectDir) {
   return count;
 }
 async function countMcps(projectDir) {
-  const { readFile: readFile7 } = await import("fs/promises");
+  const { readFile: readFile8 } = await import("fs/promises");
   const homeDir = process.env.HOME || "";
   const mcpPaths = [
     { path: join2(projectDir, ".claude", "mcp.json"), key: "mcpServers" },
@@ -734,10 +734,10 @@ async function countMcps(projectDir) {
     { path: join2(homeDir, ".config", "claude-code", "mcp.json"), key: "mcpServers" }
   ];
   let totalCount = 0;
-  for (const { path: path3, key } of mcpPaths) {
-    if (await pathExists(path3)) {
+  for (const { path: path4, key } of mcpPaths) {
+    if (await pathExists(path4)) {
       try {
-        const content = await readFile7(path3, "utf-8");
+        const content = await readFile8(path4, "utf-8");
         const config = JSON.parse(content);
         totalCount += Object.keys(config[key] || {}).length;
       } catch {
@@ -1404,6 +1404,316 @@ var codexUsageWidget = {
   }
 };
 
+// scripts/utils/gemini-client.ts
+import { readFile as readFile6, stat as stat5 } from "fs/promises";
+import { execFileSync as execFileSync3 } from "child_process";
+import os3 from "os";
+import path3 from "path";
+var API_TIMEOUT_MS3 = 5e3;
+var GEMINI_DIR = ".gemini";
+var OAUTH_CREDS_FILE = "oauth_creds.json";
+var SETTINGS_FILE = "settings.json";
+var KEYCHAIN_SERVICE_NAME = "gemini-cli-oauth";
+var MAIN_ACCOUNT_KEY = "main-account";
+var CODE_ASSIST_ENDPOINT = "https://cloudcode-pa.googleapis.com";
+var CODE_ASSIST_API_VERSION = "v1internal";
+var geminiCacheMap = /* @__PURE__ */ new Map();
+var pendingRequests4 = /* @__PURE__ */ new Map();
+var cachedCredentials = null;
+var cachedSettings = null;
+function getGeminiDir() {
+  return path3.join(os3.homedir(), GEMINI_DIR);
+}
+async function isGeminiInstalled() {
+  try {
+    const keychainToken = await getTokenFromKeychain();
+    if (keychainToken) {
+      return true;
+    }
+    const oauthPath = path3.join(getGeminiDir(), OAUTH_CREDS_FILE);
+    await stat5(oauthPath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+async function getTokenFromKeychain() {
+  if (os3.platform() !== "darwin") {
+    return null;
+  }
+  try {
+    const result = execFileSync3(
+      "security",
+      ["find-generic-password", "-s", KEYCHAIN_SERVICE_NAME, "-a", MAIN_ACCOUNT_KEY, "-w"],
+      { encoding: "utf-8", timeout: 3e3, stdio: ["pipe", "pipe", "pipe"] }
+    ).trim();
+    if (!result) {
+      return null;
+    }
+    const stored = JSON.parse(result);
+    if (!stored.token?.accessToken) {
+      return null;
+    }
+    return {
+      accessToken: stored.token.accessToken,
+      refreshToken: stored.token.refreshToken,
+      expiryDate: stored.token.expiresAt
+    };
+  } catch {
+    return null;
+  }
+}
+async function getCredentialsFromFile2() {
+  try {
+    const oauthPath = path3.join(getGeminiDir(), OAUTH_CREDS_FILE);
+    const fileStat = await stat5(oauthPath);
+    if (cachedCredentials && cachedCredentials.mtime === fileStat.mtimeMs) {
+      return cachedCredentials.data;
+    }
+    const raw = await readFile6(oauthPath, "utf-8");
+    const json = JSON.parse(raw);
+    const accessToken = json?.access_token;
+    if (!accessToken) {
+      return null;
+    }
+    const data = {
+      accessToken,
+      refreshToken: json?.refresh_token,
+      expiryDate: json?.expiry_date
+    };
+    cachedCredentials = { data, mtime: fileStat.mtimeMs };
+    return data;
+  } catch {
+    return null;
+  }
+}
+async function getGeminiCredentials() {
+  const keychainCreds = await getTokenFromKeychain();
+  if (keychainCreds) {
+    return keychainCreds;
+  }
+  return getCredentialsFromFile2();
+}
+var cachedProjectId = null;
+var PROJECT_ID_CACHE_TTL_MS = 5 * 60 * 1e3;
+async function getGeminiSettings() {
+  try {
+    const settingsPath = path3.join(getGeminiDir(), SETTINGS_FILE);
+    const fileStat = await stat5(settingsPath);
+    if (cachedSettings && cachedSettings.mtime === fileStat.mtimeMs) {
+      return cachedSettings.data;
+    }
+    const raw = await readFile6(settingsPath, "utf-8");
+    const json = JSON.parse(raw);
+    const data = {
+      cloudaicompanionProject: json?.cloudaicompanionProject,
+      selectedModel: json?.selectedModel || json?.model,
+      auth: json?.auth
+    };
+    cachedSettings = { data, mtime: fileStat.mtimeMs };
+    return data;
+  } catch {
+    return null;
+  }
+}
+async function getGeminiModel() {
+  const settings = await getGeminiSettings();
+  return settings?.selectedModel ?? null;
+}
+async function getProjectId(credentials) {
+  const envProjectId = process.env["GOOGLE_CLOUD_PROJECT"] || process.env["GOOGLE_CLOUD_PROJECT_ID"];
+  if (envProjectId) {
+    return envProjectId;
+  }
+  const settings = await getGeminiSettings();
+  if (settings?.cloudaicompanionProject) {
+    return settings.cloudaicompanionProject;
+  }
+  if (cachedProjectId && Date.now() - cachedProjectId.timestamp < PROJECT_ID_CACHE_TTL_MS) {
+    return cachedProjectId.data;
+  }
+  try {
+    const url = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:loadCodeAssist`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": `claude-dashboard/${VERSION}`,
+        "Authorization": `Bearer ${credentials.accessToken}`
+      },
+      body: JSON.stringify({
+        metadata: {
+          ideType: "GEMINI_CLI",
+          platform: "PLATFORM_UNSPECIFIED",
+          pluginType: "GEMINI"
+        }
+      }),
+      signal: AbortSignal.timeout(API_TIMEOUT_MS3)
+    });
+    if (!response.ok) {
+      debugLog("gemini", "loadCodeAssist: response not ok", response.status);
+      return null;
+    }
+    const data = await response.json();
+    const projectId = data?.cloudaicompanionProject;
+    if (projectId) {
+      cachedProjectId = { data: projectId, timestamp: Date.now() };
+      return projectId;
+    }
+  } catch (err) {
+    debugLog("gemini", "loadCodeAssist error:", err);
+  }
+  return null;
+}
+async function fetchGeminiUsage(ttlSeconds = 60) {
+  const credentials = await getGeminiCredentials();
+  if (!credentials) {
+    debugLog("gemini", "fetchGeminiUsage: no credentials found");
+    return null;
+  }
+  if (credentials.expiryDate && credentials.expiryDate < Date.now()) {
+    debugLog("gemini", "fetchGeminiUsage: token expired");
+    return null;
+  }
+  const projectId = await getProjectId(credentials);
+  if (!projectId) {
+    debugLog("gemini", "fetchGeminiUsage: no project ID found");
+    return null;
+  }
+  const tokenHash = hashToken(credentials.accessToken);
+  const cached = geminiCacheMap.get(tokenHash);
+  if (cached) {
+    const ageSeconds = (Date.now() - cached.timestamp) / 1e3;
+    if (ageSeconds < ttlSeconds) {
+      debugLog("gemini", "fetchGeminiUsage: returning cached data");
+      return cached.data;
+    }
+  }
+  const pending = pendingRequests4.get(tokenHash);
+  if (pending) {
+    return pending;
+  }
+  const requestPromise = fetchFromGeminiApi(credentials, projectId);
+  pendingRequests4.set(tokenHash, requestPromise);
+  try {
+    return await requestPromise;
+  } finally {
+    pendingRequests4.delete(tokenHash);
+  }
+}
+async function fetchFromGeminiApi(credentials, projectId) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS3);
+  try {
+    debugLog("gemini", "fetchFromGeminiApi: starting...");
+    const url = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:retrieveUserQuota`;
+    const response = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "User-Agent": `claude-dashboard/${VERSION}`,
+        "Authorization": `Bearer ${credentials.accessToken}`
+      },
+      body: JSON.stringify({
+        project: projectId
+      }),
+      signal: controller.signal
+    });
+    debugLog("gemini", "fetchFromGeminiApi: response status", response.status);
+    if (!response.ok) {
+      debugLog("gemini", "fetchFromGeminiApi: response not ok");
+      return null;
+    }
+    const data = await response.json();
+    if (!data || typeof data !== "object") {
+      debugLog("gemini", "fetchFromGeminiApi: invalid response - not an object");
+      return null;
+    }
+    const typedData = data;
+    debugLog("gemini", "fetchFromGeminiApi: got data", typedData.buckets?.length || 0, "buckets");
+    const model = await getGeminiModel();
+    let primaryBucket = null;
+    let currentModelBucket = null;
+    if (typedData.buckets && Array.isArray(typedData.buckets)) {
+      for (const bucket of typedData.buckets) {
+        if (model && bucket.modelId && bucket.modelId.includes(model)) {
+          currentModelBucket = bucket;
+        }
+        if (!primaryBucket) {
+          primaryBucket = bucket;
+        }
+      }
+    }
+    const activeBucket = currentModelBucket || primaryBucket;
+    const displayModel = model ?? activeBucket?.modelId ?? "unknown";
+    const limits = {
+      model: displayModel,
+      // remainingFraction is remaining, so usage = 1 - remaining
+      usedPercent: activeBucket?.remainingFraction !== void 0 ? Math.round((1 - activeBucket.remainingFraction) * 100) : null,
+      resetAt: activeBucket?.resetTime ?? null,
+      buckets: typedData.buckets?.map((b) => ({
+        modelId: b.modelId,
+        usedPercent: b.remainingFraction !== void 0 ? Math.round((1 - b.remainingFraction) * 100) : null,
+        resetAt: b.resetTime ?? null
+      })) ?? []
+    };
+    const tokenHash = hashToken(credentials.accessToken);
+    geminiCacheMap.set(tokenHash, { data: limits, timestamp: Date.now() });
+    debugLog("gemini", "fetchFromGeminiApi: success", limits);
+    return limits;
+  } catch (err) {
+    debugLog("gemini", "fetchFromGeminiApi: error", err);
+    return null;
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// scripts/widgets/gemini-usage.ts
+function formatUsage(percent, resetAt, t) {
+  const color = getColorForPercent(percent);
+  let result = colorize(`${Math.round(percent)}%`, color);
+  if (resetAt) {
+    const resetTime = formatTimeRemaining(new Date(resetAt), t);
+    if (resetTime) {
+      result += ` (${resetTime})`;
+    }
+  }
+  return result;
+}
+var geminiUsageWidget = {
+  id: "geminiUsage",
+  name: "Gemini Usage",
+  async getData(ctx) {
+    const installed = await isGeminiInstalled();
+    debugLog("gemini", "isGeminiInstalled:", installed);
+    if (!installed) {
+      return null;
+    }
+    const limits = await fetchGeminiUsage(ctx.config.cache.ttlSeconds);
+    debugLog("gemini", "fetchGeminiUsage result:", limits);
+    if (!limits) {
+      return null;
+    }
+    return {
+      model: limits.model,
+      usedPercent: limits.usedPercent,
+      resetAt: limits.resetAt
+    };
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    const parts = [];
+    parts.push(`${colorize("\u{1F48E}", COLORS.cyan)} ${data.model}`);
+    if (data.usedPercent !== null) {
+      parts.push(formatUsage(data.usedPercent, data.resetAt, t));
+    }
+    return parts.join(` ${colorize("\u2502", COLORS.dim)} `);
+  }
+};
+
 // scripts/widgets/index.ts
 var widgetRegistry = /* @__PURE__ */ new Map([
   ["model", modelWidget],
@@ -1421,7 +1731,8 @@ var widgetRegistry = /* @__PURE__ */ new Map([
   ["burnRate", burnRateWidget],
   ["depletionTime", depletionTimeWidget],
   ["cacheHit", cacheHitWidget],
-  ["codexUsage", codexUsageWidget]
+  ["codexUsage", codexUsageWidget],
+  ["geminiUsage", geminiUsageWidget]
 ]);
 function getWidget(id) {
   return widgetRegistry.get(id);
@@ -1490,12 +1801,12 @@ async function readStdin() {
 }
 async function loadConfig() {
   try {
-    const fileStat = await stat5(CONFIG_PATH);
+    const fileStat = await stat6(CONFIG_PATH);
     const mtime = fileStat.mtimeMs;
     if (configCache?.mtime === mtime) {
       return configCache.config;
     }
-    const content = await readFile6(CONFIG_PATH, "utf-8");
+    const content = await readFile7(CONFIG_PATH, "utf-8");
     const userConfig = JSON.parse(content);
     const config = {
       ...DEFAULT_CONFIG,

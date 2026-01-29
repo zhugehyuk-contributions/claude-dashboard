@@ -10,7 +10,9 @@ import { burnRateWidget } from '../widgets/burn-rate.js';
 import { cacheHitWidget } from '../widgets/cache-hit.js';
 import { depletionTimeWidget } from '../widgets/depletion-time.js';
 import { codexUsageWidget } from '../widgets/codex-usage.js';
+import { geminiUsageWidget } from '../widgets/gemini-usage.js';
 import * as codexClient from '../utils/codex-client.js';
+import * as geminiClient from '../utils/gemini-client.js';
 import type { WidgetContext, StdinInput, Config, Translations } from '../types.js';
 
 // Mock version module for codex-client
@@ -683,6 +685,114 @@ describe('widgets', () => {
       expect(result).toContain('o3');
       expect(result).not.toContain('5h:');
       expect(result).not.toContain('7d:');
+    });
+  });
+
+  describe('geminiUsageWidget', () => {
+    beforeEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('should have correct id and name', () => {
+      expect(geminiUsageWidget.id).toBe('geminiUsage');
+      expect(geminiUsageWidget.name).toBe('Gemini Usage');
+    });
+
+    it('should return null when Gemini is not installed', async () => {
+      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(false);
+
+      const ctx = createContext();
+      const data = await geminiUsageWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should return null when API call fails', async () => {
+      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(true);
+      vi.spyOn(geminiClient, 'fetchGeminiUsage').mockResolvedValue(null);
+
+      const ctx = createContext();
+      const data = await geminiUsageWidget.getData(ctx);
+      expect(data).toBeNull();
+    });
+
+    it('should return usage data when API call succeeds', async () => {
+      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(true);
+      vi.spyOn(geminiClient, 'fetchGeminiUsage').mockResolvedValue({
+        model: 'gemini-2.5-pro',
+        usedPercent: 25,
+        resetAt: '2026-01-30T10:00:00Z',
+        buckets: [
+          { modelId: 'gemini-2.5-pro', usedPercent: 25, resetAt: '2026-01-30T10:00:00Z' },
+        ],
+      });
+
+      const ctx = createContext();
+      const data = await geminiUsageWidget.getData(ctx);
+
+      expect(data).not.toBeNull();
+      expect(data?.model).toBe('gemini-2.5-pro');
+      expect(data?.usedPercent).toBe(25);
+      expect(data?.resetAt).toBe('2026-01-30T10:00:00Z');
+    });
+
+    it('should handle null usedPercent', async () => {
+      vi.spyOn(geminiClient, 'isGeminiInstalled').mockResolvedValue(true);
+      vi.spyOn(geminiClient, 'fetchGeminiUsage').mockResolvedValue({
+        model: 'gemini-2.0-flash',
+        usedPercent: null,
+        resetAt: null,
+        buckets: [],
+      });
+
+      const ctx = createContext();
+      const data = await geminiUsageWidget.getData(ctx);
+
+      expect(data?.model).toBe('gemini-2.0-flash');
+      expect(data?.usedPercent).toBeNull();
+      expect(data?.resetAt).toBeNull();
+    });
+
+    it('should render model name and percentage', () => {
+      const ctx = createContext();
+      const data = {
+        model: 'gemini-2.5-pro',
+        usedPercent: 35,
+        resetAt: '2026-01-30T10:00:00Z',
+      };
+      const result = geminiUsageWidget.render(data, ctx);
+
+      expect(result).toContain('💎');
+      expect(result).toContain('gemini-2.5-pro');
+      expect(result).toContain('35%');
+    });
+
+    it('should render reset time', () => {
+      const ctx = createContext();
+      // Set reset time to ~2 hours from now
+      const resetAt = new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString();
+      const data = {
+        model: 'gemini-2.0-flash',
+        usedPercent: 50,
+        resetAt,
+      };
+      const result = geminiUsageWidget.render(data, ctx);
+
+      expect(result).toContain('('); // Has reset time in parentheses
+      expect(result).toMatch(/1h\d+m|2h/); // ~2 hours remaining
+    });
+
+    it('should handle null usedPercent in render', () => {
+      const ctx = createContext();
+      const data = {
+        model: 'gemini-3-pro-preview',
+        usedPercent: null,
+        resetAt: null,
+      };
+      const result = geminiUsageWidget.render(data, ctx);
+
+      expect(result).toContain('💎');
+      expect(result).toContain('gemini-3-pro-preview');
+      expect(result).not.toContain('%');
     });
   });
 });

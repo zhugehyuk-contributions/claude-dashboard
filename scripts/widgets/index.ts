@@ -28,6 +28,7 @@ import { burnRateWidget } from './burn-rate.js';
 import { depletionTimeWidget } from './depletion-time.js';
 import { cacheHitWidget } from './cache-hit.js';
 import { codexUsageWidget } from './codex-usage.js';
+import { geminiUsageWidget } from './gemini-usage.js';
 
 /**
  * Widget registry - maps widget IDs to widget implementations
@@ -49,6 +50,7 @@ const widgetRegistry = new Map<WidgetId, Widget>([
   ['depletionTime', depletionTimeWidget],
   ['cacheHit', cacheHitWidget],
   ['codexUsage', codexUsageWidget],
+  ['geminiUsage', geminiUsageWidget],
 ] as [WidgetId, Widget][]);
 
 /**
