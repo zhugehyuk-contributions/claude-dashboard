@@ -634,7 +634,7 @@ import { execFileSync as execFileSync2 } from "child_process";
 import { basename } from "path";
 function getGitBranch(cwd) {
   try {
-    const result = execFileSync2("git", ["rev-parse", "--abbrev-ref", "HEAD"], {
+    const result = execFileSync2("git", ["--no-optional-locks", "rev-parse", "--abbrev-ref", "HEAD"], {
       cwd,
       encoding: "utf-8",
       timeout: 500,
@@ -648,7 +648,7 @@ function getGitBranch(cwd) {
 }
 function isGitDirty(cwd) {
   try {
-    const result = execFileSync2("git", ["status", "--porcelain"], {
+    const result = execFileSync2("git", ["--no-optional-locks", "status", "--porcelain"], {
       cwd,
       encoding: "utf-8",
       timeout: 1e3,

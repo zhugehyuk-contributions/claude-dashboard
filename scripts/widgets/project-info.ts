@@ -13,7 +13,7 @@ import { COLORS, RESET, colorize } from '../utils/colors.js';
  */
 function getGitBranch(cwd: string): string | undefined {
   try {
-    const result = execFileSync('git', ['rev-parse', '--abbrev-ref', 'HEAD'], {
+    const result = execFileSync('git', ['--no-optional-locks', 'rev-parse', '--abbrev-ref', 'HEAD'], {
       cwd,
       encoding: 'utf-8',
       timeout: 500, // 500ms timeout to prevent blocking
@@ -31,7 +31,7 @@ function getGitBranch(cwd: string): string | undefined {
  */
 function isGitDirty(cwd: string): boolean {
   try {
-    const result = execFileSync('git', ['status', '--porcelain'], {
+    const result = execFileSync('git', ['--no-optional-locks', 'status', '--porcelain'], {
       cwd,
       encoding: 'utf-8',
       timeout: 1000, // 1s timeout
