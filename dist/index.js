@@ -145,7 +145,7 @@ function hashToken(token) {
 }
 
 // scripts/version.ts
-var VERSION = "1.6.0";
+var VERSION = "1.7.0";
 
 // scripts/utils/api-client.ts
 var API_TIMEOUT_MS = 5e3;
@@ -335,6 +335,15 @@ var en_default = {
     burnRate: "Rate",
     cache: "Cache",
     toLimit: "to"
+  },
+  checkUsage: {
+    title: "CLI Usage Dashboard",
+    recommendation: "Recommendation",
+    lowestUsage: "Lowest usage",
+    used: "used",
+    notInstalled: "not installed",
+    errorFetching: "Error fetching data",
+    noData: "No usage data available"
   }
 };
 
@@ -375,6 +384,15 @@ var ko_default = {
     burnRate: "\uC18C\uBAA8\uC728",
     cache: "\uCE90\uC2DC",
     toLimit: "\uD6C4"
+  },
+  checkUsage: {
+    title: "CLI \uC0AC\uC6A9\uB7C9 \uB300\uC2DC\uBCF4\uB4DC",
+    recommendation: "\uCD94\uCC9C",
+    lowestUsage: "\uAC00\uC7A5 \uC5EC\uC720",
+    used: "\uC0AC\uC6A9",
+    notInstalled: "\uC124\uCE58\uB418\uC9C0 \uC54A\uC74C",
+    errorFetching: "\uB370\uC774\uD130 \uAC00\uC838\uC624\uAE30 \uC624\uB958",
+    noData: "\uC0AC\uC6A9\uB7C9 \uB370\uC774\uD130 \uC5C6\uC74C"
   }
 };
 

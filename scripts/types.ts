@@ -402,3 +402,30 @@ export interface ParsedTranscript {
   toolResults: Set<string>;
   sessionStartTime?: number;
 }
+
+/**
+ * CLI usage data for check-usage command
+ */
+export interface CLIUsageInfo {
+  name: string;
+  available: boolean;
+  error: boolean;
+  fiveHourPercent: number | null;
+  sevenDayPercent: number | null;
+  fiveHourReset: string | null;
+  sevenDayReset: string | null;
+  model?: string;
+  plan?: string;
+}
+
+/**
+ * Output structure for check-usage command
+ */
+export interface CheckUsageOutput {
+  claude: CLIUsageInfo;
+  codex: CLIUsageInfo | null;
+  gemini: CLIUsageInfo | null;
+  zai: CLIUsageInfo | null;
+  recommendation: string | null;
+  recommendationReason: string;
+}

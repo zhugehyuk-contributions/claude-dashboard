@@ -238,6 +238,45 @@ rm -rf ~/.cache/claude-dashboard/
 
 Cache files are automatically cleaned up after 1 hour.
 
+## Commands
+
+### `/claude-dashboard:setup`
+
+Configure the status line display mode, language, and plan. See [Configuration](#configuration) section above.
+
+### `/claude-dashboard:check-usage`
+
+Check usage limits for all AI CLIs (Claude, Codex, Gemini, z.ai) at once and get a recommendation for which CLI has the most available capacity.
+
+```bash
+# Interactive output with colors
+/claude-dashboard:check-usage
+
+# JSON output for scripting
+/claude-dashboard:check-usage --json
+```
+
+**Example output:**
+
+```
+════════════════════════════════════════
+          CLI Usage Dashboard
+════════════════════════════════════════
+
+[Claude]
+  5h: 25% (4h10m)  |  7d: 18% (4d20h)
+
+[Codex]
+  5h: 0% (4h59m)  |  7d: 1% (3d8h)  |  Plan: plus
+
+[Gemini]
+  Used: 0% (15h7m)  |  Model: gemini-2.0-flash
+
+════════════════════════════════════════
+Recommendation: codex (Lowest usage (0% used))
+════════════════════════════════════════
+```
+
 ## Development
 
 ```bash

@@ -19,9 +19,11 @@ claude-dashboard/
 │   ├── plugin.json          # Plugin manifest
 │   └── marketplace.json     # Marketplace metadata
 ├── commands/
-│   └── setup.md             # /claude-dashboard:setup command
+│   ├── setup.md             # /claude-dashboard:setup command
+│   └── check-usage.md       # /claude-dashboard:check-usage command
 ├── scripts/
-│   ├── statusline.ts        # Main entry point
+│   ├── statusline.ts        # Main entry point (status line)
+│   ├── check-usage.ts       # CLI usage dashboard entry point
 │   ├── types.ts             # TypeScript interfaces
 │   ├── widgets/             # Widget system
 │   │   ├── base.ts          # Widget interface
@@ -61,7 +63,8 @@ claude-dashboard/
 │   ├── en.json              # English translations
 │   └── ko.json              # Korean translations
 ├── dist/
-│   └── index.js             # Built output (committed)
+│   ├── index.js             # Status line built output (committed)
+│   └── check-usage.js       # CLI usage dashboard built output (committed)
 └── package.json
 ```
 
