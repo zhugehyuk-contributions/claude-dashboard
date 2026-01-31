@@ -1719,8 +1719,6 @@ async function fetchGeminiUsage(ttlSeconds = 60) {
   }
 }
 async function fetchFromGeminiApi(credentials, projectId) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS3);
   try {
     debugLog("gemini", "fetchFromGeminiApi: starting...");
     const url = `${CODE_ASSIST_ENDPOINT}/${CODE_ASSIST_API_VERSION}:retrieveUserQuota`;
@@ -1735,7 +1733,7 @@ async function fetchFromGeminiApi(credentials, projectId) {
       body: JSON.stringify({
         project: projectId
       }),
-      signal: controller.signal
+      signal: AbortSignal.timeout(API_TIMEOUT_MS3)
     });
     debugLog("gemini", "fetchFromGeminiApi: response status", response.status);
     if (!response.ok) {
@@ -1788,8 +1786,6 @@ async function fetchFromGeminiApi(credentials, projectId) {
   } catch (err) {
     debugLog("gemini", "fetchFromGeminiApi: error", err);
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 

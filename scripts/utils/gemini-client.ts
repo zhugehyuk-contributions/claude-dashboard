@@ -514,9 +514,6 @@ async function fetchFromGeminiApi(
   credentials: GeminiCredentials,
   projectId: string
 ): Promise<GeminiUsageLimits | null> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), API_TIMEOUT_MS);
-
   try {
     debugLog('gemini', 'fetchFromGeminiApi: starting...');
 
@@ -532,7 +529,7 @@ async function fetchFromGeminiApi(
       body: JSON.stringify({
         project: projectId,
       }),
-      signal: controller.signal,
+      signal: AbortSignal.timeout(API_TIMEOUT_MS),
     });
 
     debugLog('gemini', 'fetchFromGeminiApi: response status', response.status);
@@ -609,8 +606,6 @@ async function fetchFromGeminiApi(
   } catch (err) {
     debugLog('gemini', 'fetchFromGeminiApi: error', err);
     return null;
-  } finally {
-    clearTimeout(timeout);
   }
 }
 
