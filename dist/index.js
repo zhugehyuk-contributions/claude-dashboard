@@ -18,7 +18,7 @@ var DISPLAY_PRESETS = {
     ["model", "context", "cost", "rateLimit5h", "rateLimit7d", "rateLimit7dSonnet"],
     ["projectInfo", "sessionDuration", "burnRate", "depletionTime", "todoProgress"],
     ["configCounts", "toolActivity", "agentStatus", "cacheHit"],
-    ["codexUsage", "geminiUsage"]
+    ["codexUsage", "geminiUsage", "zaiUsage"]
   ]
 };
 var DEFAULT_CONFIG = {
@@ -310,7 +310,8 @@ var en_default = {
     "7d": "7d",
     "7d_all": "7d",
     "7d_sonnet": "7d-S",
-    codex: "Codex"
+    codex: "Codex",
+    "1m": "1m"
   },
   time: {
     days: "d",
@@ -349,7 +350,8 @@ var ko_default = {
     "7d": "7\uC77C",
     "7d_all": "7\uC77C",
     "7d_sonnet": "7\uC77C-S",
-    codex: "Codex"
+    codex: "Codex",
+    "1m": "1\uAC1C\uC6D4"
   },
   time: {
     days: "\uC77C",
@@ -480,6 +482,34 @@ function formatDuration(ms, t) {
   return `${minutes}${t.minutes}`;
 }
 
+// scripts/utils/provider.ts
+function detectProvider() {
+  const baseUrl = process.env.ANTHROPIC_BASE_URL || "";
+  if (baseUrl.includes("api.z.ai")) {
+    return "zai";
+  }
+  if (baseUrl.includes("bigmodel.cn")) {
+    return "zhipu";
+  }
+  return "anthropic";
+}
+function isZaiProvider() {
+  const provider = detectProvider();
+  return provider === "zai" || provider === "zhipu";
+}
+function getZaiApiBaseUrl() {
+  const baseUrl = process.env.ANTHROPIC_BASE_URL;
+  if (!baseUrl) {
+    return null;
+  }
+  try {
+    const url = new URL(baseUrl);
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
 // scripts/widgets/model.ts
 var modelWidget = {
   id: "model",
@@ -493,7 +523,8 @@ var modelWidget = {
   },
   render(data) {
     const shortName = shortenModelName(data.displayName);
-    return `${COLORS.pastelCyan}\u{1F916} ${shortName}${RESET}`;
+    const icon = isZaiProvider() ? "\u{1F7E0}" : "\u{1F916}";
+    return `${COLORS.pastelCyan}${icon} ${shortName}${RESET}`;
   }
 };
 
@@ -1839,6 +1870,204 @@ var geminiUsageWidget = {
   }
 };
 
+// scripts/utils/zai-api-client.ts
+var API_TIMEOUT_MS4 = 5e3;
+var zaiCacheMap = /* @__PURE__ */ new Map();
+var pendingRequests5 = /* @__PURE__ */ new Map();
+function isZaiInstalled() {
+  return isZaiProvider() && !!getZaiApiBaseUrl() && !!getZaiAuthToken();
+}
+function getZaiAuthToken() {
+  return process.env.ANTHROPIC_AUTH_TOKEN || null;
+}
+async function fetchZaiUsage(ttlSeconds = 60) {
+  if (!isZaiProvider()) {
+    debugLog("zai", "fetchZaiUsage: not a z.ai provider");
+    return null;
+  }
+  const baseUrl = getZaiApiBaseUrl();
+  const authToken = getZaiAuthToken();
+  if (!baseUrl || !authToken) {
+    debugLog("zai", "fetchZaiUsage: missing base URL or auth token");
+    return null;
+  }
+  const cacheKey = baseUrl;
+  const cached = zaiCacheMap.get(cacheKey);
+  if (cached) {
+    const ageSeconds = (Date.now() - cached.timestamp) / 1e3;
+    if (ageSeconds < ttlSeconds) {
+      debugLog("zai", "fetchZaiUsage: returning cached data");
+      return cached.data;
+    }
+  }
+  const pending = pendingRequests5.get(cacheKey);
+  if (pending) {
+    return pending;
+  }
+  const requestPromise = fetchFromZaiApi(baseUrl, authToken);
+  pendingRequests5.set(cacheKey, requestPromise);
+  try {
+    const result = await requestPromise;
+    if (result) {
+      zaiCacheMap.set(cacheKey, { data: result, timestamp: Date.now() });
+    }
+    return result;
+  } finally {
+    pendingRequests5.delete(cacheKey);
+  }
+}
+async function fetchFromZaiApi(baseUrl, authToken) {
+  try {
+    debugLog("zai", "fetchFromZaiApi: starting...");
+    const url = `${baseUrl}/api/monitor/usage/quota/limit`;
+    const response = await fetch(url, {
+      method: "GET",
+      headers: {
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${authToken}`
+      },
+      signal: AbortSignal.timeout(API_TIMEOUT_MS4)
+    });
+    debugLog("zai", "fetchFromZaiApi: response status", response.status);
+    if (!response.ok) {
+      debugLog("zai", "fetchFromZaiApi: response not ok");
+      return null;
+    }
+    let data;
+    try {
+      data = await response.json();
+    } catch {
+      debugLog("zai", "fetchFromZaiApi: invalid JSON response");
+      return null;
+    }
+    if (!data || typeof data !== "object") {
+      debugLog("zai", "fetchFromZaiApi: invalid response - not an object");
+      return null;
+    }
+    const typedData = data;
+    const limits = typedData.data?.limits;
+    if (!limits || !Array.isArray(limits)) {
+      debugLog("zai", "fetchFromZaiApi: no limits array");
+      return null;
+    }
+    debugLog("zai", `fetchFromZaiApi: got ${limits.length} limits`);
+    let tokensPercent = null;
+    let tokensResetAt = null;
+    let mcpPercent = null;
+    let mcpResetAt = null;
+    for (const limit of limits) {
+      if (limit.type === "TOKENS_LIMIT") {
+        if (limit.currentValue !== void 0) {
+          tokensPercent = Math.round(limit.currentValue * 100);
+        }
+        if (limit.nextResetTime !== void 0) {
+          tokensResetAt = limit.nextResetTime;
+        }
+      } else if (limit.type === "TIME_LIMIT") {
+        if (limit.usage !== void 0) {
+          mcpPercent = Math.round(limit.usage * 100);
+        } else if (limit.currentValue !== void 0) {
+          mcpPercent = Math.round(limit.currentValue * 100);
+        }
+        if (limit.nextResetTime !== void 0) {
+          mcpResetAt = limit.nextResetTime;
+        }
+      }
+    }
+    const result = {
+      model: "GLM",
+      tokensPercent,
+      tokensResetAt,
+      mcpPercent,
+      mcpResetAt
+    };
+    debugLog("zai", "fetchFromZaiApi: success", result);
+    return result;
+  } catch (err) {
+    debugLog("zai", "fetchFromZaiApi: error", err);
+    return null;
+  }
+}
+
+// scripts/widgets/zai-usage.ts
+function formatPercent(percent) {
+  const color = getColorForPercent(percent);
+  return colorize(`${Math.round(percent)}%`, color);
+}
+function formatResetTime(resetAtMs, t) {
+  const now = Date.now();
+  const diffMs = resetAtMs - now;
+  if (diffMs <= 0)
+    return `0${t.time.minutes}`;
+  const totalMinutes = Math.floor(diffMs / (1e3 * 60));
+  const totalHours = Math.floor(totalMinutes / 60);
+  const days = Math.floor(totalHours / 24);
+  const hours = totalHours % 24;
+  const minutes = totalMinutes % 60;
+  if (days > 0) {
+    return `${days}${t.time.days}${hours}${t.time.hours}`;
+  }
+  if (hours > 0) {
+    return `${hours}${t.time.hours}${minutes}${t.time.minutes}`;
+  }
+  return `${minutes}${t.time.minutes}`;
+}
+var zaiUsageWidget = {
+  id: "zaiUsage",
+  name: "Z.ai Usage",
+  async getData(ctx) {
+    const installed = isZaiInstalled();
+    debugLog("zai", "isZaiInstalled:", installed);
+    if (!installed) {
+      return null;
+    }
+    const limits = await fetchZaiUsage(ctx.config.cache.ttlSeconds);
+    debugLog("zai", "fetchZaiUsage result:", limits);
+    if (!limits) {
+      return {
+        model: "GLM",
+        tokensPercent: null,
+        tokensResetAt: null,
+        mcpPercent: null,
+        mcpResetAt: null,
+        isError: true
+      };
+    }
+    return {
+      model: limits.model,
+      tokensPercent: limits.tokensPercent,
+      tokensResetAt: limits.tokensResetAt,
+      mcpPercent: limits.mcpPercent,
+      mcpResetAt: limits.mcpResetAt
+    };
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    const parts = [];
+    parts.push(`\u{1F7E0} ${data.model}`);
+    if (data.isError) {
+      parts.push(colorize("\u26A0\uFE0F", COLORS.yellow));
+    } else {
+      if (data.tokensPercent !== null) {
+        let tokenPart = `${t.labels["5h"]}: ${formatPercent(data.tokensPercent)}`;
+        if (data.tokensResetAt) {
+          tokenPart += ` (${formatResetTime(data.tokensResetAt, t)})`;
+        }
+        parts.push(tokenPart);
+      }
+      if (data.mcpPercent !== null) {
+        let mcpPart = `${t.labels["1m"]}: ${formatPercent(data.mcpPercent)}`;
+        if (data.mcpResetAt) {
+          mcpPart += ` (${formatResetTime(data.mcpResetAt, t)})`;
+        }
+        parts.push(mcpPart);
+      }
+    }
+    return parts.join(` ${colorize("\u2502", COLORS.dim)} `);
+  }
+};
+
 // scripts/widgets/index.ts
 var widgetRegistry = /* @__PURE__ */ new Map([
   ["model", modelWidget],
@@ -1857,7 +2086,8 @@ var widgetRegistry = /* @__PURE__ */ new Map([
   ["depletionTime", depletionTimeWidget],
   ["cacheHit", cacheHitWidget],
   ["codexUsage", codexUsageWidget],
-  ["geminiUsage", geminiUsageWidget]
+  ["geminiUsage", geminiUsageWidget],
+  ["zaiUsage", zaiUsageWidget]
 ]);
 function getWidget(id) {
   return widgetRegistry.get(id);

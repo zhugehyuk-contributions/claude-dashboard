@@ -6,6 +6,7 @@ import type { Widget } from './base.js';
 import type { WidgetContext, ModelData } from '../types.js';
 import { COLORS, RESET } from '../utils/colors.js';
 import { shortenModelName } from '../utils/formatters.js';
+import { isZaiProvider } from '../utils/provider.js';
 
 export const modelWidget: Widget<ModelData> = {
   id: 'model',
@@ -22,6 +23,8 @@ export const modelWidget: Widget<ModelData> = {
 
   render(data: ModelData): string {
     const shortName = shortenModelName(data.displayName);
-    return `${COLORS.pastelCyan}🤖 ${shortName}${RESET}`;
+    // z.ai/ZHIPU uses orange circle, Anthropic uses robot emoji
+    const icon = isZaiProvider() ? '🟠' : '🤖';
+    return `${COLORS.pastelCyan}${icon} ${shortName}${RESET}`;
   },
 };
