@@ -1079,10 +1079,12 @@ function getTranslationsByLang(lang) {
 
 // scripts/check-usage.ts
 var BOX_WIDTH = 40;
+var CHECK_USAGE_TTL_SECONDS = 60;
 function normalizeToISO(dateStr) {
   if (!dateStr)
     return null;
-  return new Date(dateStr).toISOString();
+  const date = new Date(dateStr);
+  return isNaN(date.getTime()) ? null : date.toISOString();
 }
 function formatTimeFromTimestamp(resetAt, t) {
   const resetDate = new Date(resetAt * 1e3);
@@ -1344,10 +1346,20 @@ function parseZaiUsage(limits, installed) {
     model: limits.model
   };
 }
+function parseLangArg(args) {
+  const langIndex = args.indexOf("--lang");
+  if (langIndex !== -1 && args[langIndex + 1]) {
+    const lang = args[langIndex + 1].toLowerCase();
+    if (lang === "ko" || lang === "en") {
+      return lang;
+    }
+  }
+  return null;
+}
 async function main() {
   const args = process.argv.slice(2);
   const isJsonMode = args.includes("--json");
-  const lang = detectSystemLanguage();
+  const lang = parseLangArg(args) ?? detectSystemLanguage();
   const t = getTranslationsByLang(lang);
   const zaiInstalled = isZaiInstalled();
   const [
@@ -1355,14 +1367,14 @@ async function main() {
     codexInstalled,
     geminiInstalled
   ] = await Promise.all([
-    fetchUsageLimits(60),
+    fetchUsageLimits(CHECK_USAGE_TTL_SECONDS),
     isCodexInstalled(),
     isGeminiInstalled()
   ]);
   const [codexLimits, geminiLimits, zaiLimits] = await Promise.all([
-    codexInstalled ? fetchCodexUsage(60) : Promise.resolve(null),
-    geminiInstalled ? fetchGeminiUsage(60) : Promise.resolve(null),
-    zaiInstalled ? fetchZaiUsage(60) : Promise.resolve(null)
+    codexInstalled ? fetchCodexUsage(CHECK_USAGE_TTL_SECONDS) : Promise.resolve(null),
+    geminiInstalled ? fetchGeminiUsage(CHECK_USAGE_TTL_SECONDS) : Promise.resolve(null),
+    zaiInstalled ? fetchZaiUsage(CHECK_USAGE_TTL_SECONDS) : Promise.resolve(null)
   ]);
   const claudeUsage = parseClaudeUsage(claudeLimits);
   const codexUsage = parseCodexUsage(codexLimits, codexInstalled);
@@ -1431,6 +1443,19 @@ async function main() {
 }
 main().catch((err) => {
   const message = err instanceof Error ? err.message : String(err);
-  console.error("Error:", message);
+  const isJsonMode = process.argv.includes("--json");
+  if (isJsonMode) {
+    console.log(JSON.stringify({ error: message }));
+  } else {
+    console.error("Error:", message);
+  }
   process.exit(1);
 });
+export {
+  calculateRecommendation,
+  normalizeToISO,
+  parseClaudeUsage,
+  parseCodexUsage,
+  parseGeminiUsage,
+  parseZaiUsage
+};
