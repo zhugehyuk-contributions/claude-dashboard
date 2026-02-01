@@ -103,7 +103,8 @@ interface Widget<T extends WidgetData> {
 | `cacheHit` | stdin | Cache hit rate percentage |
 | `depletionTime` | API + session | Estimated time to rate limit |
 | `codexUsage` | Codex API | OpenAI Codex CLI usage (model, 5h, 7d) |
-| `geminiUsage` | Gemini API | Google Gemini CLI usage (model, usage %) |
+| `geminiUsage` | Gemini API | Google Gemini CLI usage (current model only) |
+| `geminiUsageAll` | Gemini API | Google Gemini CLI usage (all model buckets) |
 | `zaiUsage` | z.ai API | z.ai/ZHIPU GLM usage (5h tokens, 1m MCP) |
 
 ### Display Modes

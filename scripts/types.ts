@@ -50,6 +50,7 @@ export type WidgetId =
   | 'cacheHit'
   | 'codexUsage'
   | 'geminiUsage'
+  | 'geminiUsageAll'
   | 'zaiUsage';
 
 /**
@@ -327,12 +328,25 @@ export interface GeminiUsageLimits {
 }
 
 /**
- * Gemini usage widget data
+ * Gemini usage widget data (single model)
  */
 export interface GeminiUsageData {
   model: string;
   usedPercent: number | null;
   resetAt: string | null;
+  /** Indicates API error occurred */
+  isError?: boolean;
+}
+
+/**
+ * Gemini usage all widget data (all models)
+ */
+export interface GeminiUsageAllData {
+  buckets: Array<{
+    modelId: string;
+    usedPercent: number | null;
+    resetAt: string | null;
+  }>;
   /** Indicates API error occurred */
   isError?: boolean;
 }
@@ -374,6 +388,7 @@ export type WidgetData =
   | CacheHitData
   | CodexUsageData
   | GeminiUsageData
+  | GeminiUsageAllData
   | ZaiUsageData;
 
 /**

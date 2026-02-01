@@ -1887,6 +1887,57 @@ var geminiUsageWidget = {
     return parts.join(` ${colorize("\u2502", COLORS.dim)} `);
   }
 };
+var geminiUsageAllWidget = {
+  id: "geminiUsageAll",
+  name: "Gemini Usage All",
+  async getData(ctx) {
+    const installed = await isGeminiInstalled();
+    debugLog("gemini", "geminiUsageAll - isGeminiInstalled:", installed);
+    if (!installed) {
+      return null;
+    }
+    const limits = await fetchGeminiUsage(ctx.config.cache.ttlSeconds);
+    debugLog("gemini", "geminiUsageAll - fetchGeminiUsage result:", limits);
+    if (!limits) {
+      return {
+        buckets: [],
+        isError: true
+      };
+    }
+    return {
+      buckets: limits.buckets.map((b) => ({
+        modelId: b.modelId || "unknown",
+        usedPercent: b.usedPercent,
+        resetAt: b.resetAt
+      }))
+    };
+  },
+  render(data, ctx) {
+    const { translations: t } = ctx;
+    if (data.isError) {
+      return `${colorize("\u{1F48E}", COLORS.cyan)} Gemini ${colorize("\u26A0\uFE0F", COLORS.yellow)}`;
+    }
+    if (data.buckets.length === 0) {
+      return `${colorize("\u{1F48E}", COLORS.cyan)} Gemini ${colorize("--", COLORS.dim)}`;
+    }
+    const parts = data.buckets.map((bucket) => {
+      const modelShort = bucket.modelId.replace("gemini-", "");
+      if (bucket.usedPercent !== null) {
+        const color = getColorForPercent(bucket.usedPercent);
+        let result = `${colorize(modelShort, COLORS.dim)}: ${colorize(`${bucket.usedPercent}%`, color)}`;
+        if (bucket.resetAt) {
+          const resetTime = formatTimeRemaining(new Date(bucket.resetAt), t);
+          if (resetTime) {
+            result += ` (${resetTime})`;
+          }
+        }
+        return result;
+      }
+      return `${colorize(modelShort, COLORS.dim)}: ${colorize("--", COLORS.dim)}`;
+    });
+    return `${colorize("\u{1F48E}", COLORS.cyan)} ${parts.join(" \u2502 ")}`;
+  }
+};
 
 // scripts/utils/zai-api-client.ts
 var API_TIMEOUT_MS4 = 5e3;
@@ -2110,6 +2161,7 @@ var widgetRegistry = /* @__PURE__ */ new Map([
   ["cacheHit", cacheHitWidget],
   ["codexUsage", codexUsageWidget],
   ["geminiUsage", geminiUsageWidget],
+  ["geminiUsageAll", geminiUsageAllWidget],
   ["zaiUsage", zaiUsageWidget]
 ]);
 function getWidget(id) {

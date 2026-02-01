@@ -135,7 +135,8 @@ Run `/claude-dashboard:setup` without arguments to use interactive mode:
 | `cacheHit` | Cache hit rate percentage |
 | `depletionTime` | Estimated time to rate limit (approx)¹ |
 | `codexUsage` | OpenAI Codex CLI usage (auto-hide if not installed)² |
-| `geminiUsage` | Google Gemini CLI usage (auto-hide if not installed)³ |
+| `geminiUsage` | Google Gemini CLI usage - current model (auto-hide if not installed)³ |
+| `geminiUsageAll` | Google Gemini CLI usage - all models (auto-hide if not installed)³ |
 | `zaiUsage` | z.ai/ZHIPU usage (auto-hide if not using z.ai)⁴ |
 
 > ¹ **Depletion time approximation**: Assumes all current utilization came from this session. May be inaccurate if session started with pre-existing usage or multiple concurrent sessions are running. Estimate improves as session runs longer.
