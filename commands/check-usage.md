@@ -15,6 +15,10 @@ Display usage limits for all AI CLIs (Claude, Codex, Gemini, z.ai) and recommend
 
 # JSON output for scripting
 /claude-dashboard:check-usage --json
+
+# Specify language (en or ko)
+/claude-dashboard:check-usage --lang ko
+/claude-dashboard:check-usage --lang en
 ```
 
 ## Output
