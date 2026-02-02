@@ -66,7 +66,7 @@ function hashToken(token) {
 }
 
 // scripts/version.ts
-var VERSION = "1.7.0";
+var VERSION = "1.8.0";
 
 // scripts/utils/api-client.ts
 var API_TIMEOUT_MS = 5e3;
@@ -220,7 +220,8 @@ async function cleanupExpiredCache() {
 }
 
 // scripts/utils/codex-client.ts
-import { readFile as readFile3, stat as stat3 } from "fs/promises";
+import { readFile as readFile3, stat as stat3, writeFile as writeFile2, mkdir as mkdir2 } from "fs/promises";
+import { execFileSync as execFileSync2 } from "child_process";
 import os2 from "os";
 import path2 from "path";
 
@@ -242,6 +243,8 @@ function debugLog(context, message, error) {
 var API_TIMEOUT_MS2 = 5e3;
 var CODEX_AUTH_PATH = path2.join(os2.homedir(), ".codex", "auth.json");
 var CODEX_CONFIG_PATH = path2.join(os2.homedir(), ".codex", "config.toml");
+var CACHE_DIR2 = path2.join(os2.homedir(), ".cache", "claude-dashboard");
+var MODEL_CACHE_PATH = path2.join(CACHE_DIR2, "codex-model-cache.json");
 var codexCacheMap = /* @__PURE__ */ new Map();
 var pendingRequests2 = /* @__PURE__ */ new Map();
 var cachedAuth = null;
@@ -273,7 +276,7 @@ async function getCodexAuth() {
     return null;
   }
 }
-async function getCodexModel() {
+async function getModelFromConfig() {
   try {
     const raw = await readFile3(CODEX_CONFIG_PATH, "utf-8");
     const match = raw.match(/^model\s*=\s*["']([^"']+)["']\s*(?:#.*)?$/m);
@@ -281,6 +284,77 @@ async function getCodexModel() {
   } catch {
     return null;
   }
+}
+async function getConfigMtime() {
+  try {
+    const fileStat = await stat3(CODEX_CONFIG_PATH);
+    return fileStat.mtimeMs;
+  } catch {
+    return 0;
+  }
+}
+async function getCachedModel(currentMtime) {
+  try {
+    const raw = await readFile3(MODEL_CACHE_PATH, "utf-8");
+    const cache = JSON.parse(raw);
+    if (cache.configMtime === currentMtime && cache.model) {
+      debugLog("codex", "getCachedModel: cache hit", cache.model);
+      return cache.model;
+    }
+    debugLog("codex", "getCachedModel: cache stale");
+    return null;
+  } catch {
+    return null;
+  }
+}
+async function saveModelCache(model, configMtime) {
+  try {
+    await mkdir2(CACHE_DIR2, { recursive: true });
+    const cache = { model, configMtime };
+    await writeFile2(MODEL_CACHE_PATH, JSON.stringify(cache), "utf-8");
+    debugLog("codex", "saveModelCache: saved", model);
+  } catch (err) {
+    debugLog("codex", "saveModelCache: error", err);
+  }
+}
+function detectModelFromCodexExec() {
+  try {
+    debugLog("codex", "detectModelFromCodexExec: running codex exec...");
+    const output = execFileSync2("codex", ["exec", "1+1="], {
+      encoding: "utf-8",
+      timeout: 1e4,
+      stdio: ["pipe", "pipe", "pipe"]
+    });
+    const match = output.match(/^model:\s*(.+)$/m);
+    if (match) {
+      const model = match[1].trim();
+      debugLog("codex", "detectModelFromCodexExec: detected", model);
+      return model;
+    }
+    debugLog("codex", "detectModelFromCodexExec: no model line found");
+    return null;
+  } catch (err) {
+    debugLog("codex", "detectModelFromCodexExec: error", err);
+    return null;
+  }
+}
+async function getCodexModel() {
+  const configModel = await getModelFromConfig();
+  if (configModel) {
+    debugLog("codex", "getCodexModel: from config", configModel);
+    return configModel;
+  }
+  const configMtime = await getConfigMtime();
+  const cachedModel = await getCachedModel(configMtime);
+  if (cachedModel) {
+    return cachedModel;
+  }
+  const detectedModel = detectModelFromCodexExec();
+  if (detectedModel) {
+    await saveModelCache(detectedModel, configMtime);
+    return detectedModel;
+  }
+  return null;
 }
 async function fetchCodexUsage(ttlSeconds = 60) {
   const auth = await getCodexAuth();
@@ -369,8 +443,8 @@ async function fetchFromCodexApi(auth) {
 }
 
 // scripts/utils/gemini-client.ts
-import { readFile as readFile4, writeFile as writeFile2, stat as stat4 } from "fs/promises";
-import { execFileSync as execFileSync2 } from "child_process";
+import { readFile as readFile4, writeFile as writeFile3, stat as stat4 } from "fs/promises";
+import { execFileSync as execFileSync3 } from "child_process";
 import os3 from "os";
 import path3 from "path";
 var API_TIMEOUT_MS3 = 5e3;
@@ -411,7 +485,7 @@ async function getTokenFromKeychain() {
     return null;
   }
   try {
-    const result = execFileSync2(
+    const result = execFileSync3(
       "security",
       ["find-generic-password", "-s", KEYCHAIN_SERVICE_NAME, "-a", MAIN_ACCOUNT_KEY, "-w"],
       { encoding: "utf-8", timeout: 3e3, stdio: ["pipe", "pipe", "pipe"] }
@@ -542,7 +616,7 @@ async function saveCredentialsToFile(credentials, rawResponse) {
       token_type: rawResponse.token_type || "Bearer",
       scope: rawResponse.scope || existingData.scope
     };
-    await writeFile2(oauthPath, JSON.stringify(newData, null, 2), { mode: 384 });
+    await writeFile3(oauthPath, JSON.stringify(newData, null, 2), { mode: 384 });
     debugLog("gemini", "saveCredentialsToFile: saved");
   } catch (err) {
     debugLog("gemini", "saveCredentialsToFile: error", err);
